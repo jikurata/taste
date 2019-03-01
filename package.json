@@ -1,0 +1,18 @@
+{
+  "name": "@jikurata/taste",
+  "version": "0.0.0",
+  "description": "Barebones testing framework for web browsers",
+  "main": "index.js",
+  "scripts": {
+    "build:test": "node build/build-test.js"
+  },
+  "keywords": [
+    "test",
+    "browser"
+  ],
+  "author": "jikurata",
+  "license": "ISC",
+  "devDependencies": {
+    "browserify": "^16.2.3"
+  }
+}
