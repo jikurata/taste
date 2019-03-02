@@ -65,15 +65,24 @@ function run() {
 
 window.addEventListener('load', run);
 
-},{"../lib/Taste.js":6}],2:[function(require,module,exports){
+},{"../lib/Taste.js":7}],2:[function(require,module,exports){
 'use strict';
+const generateContextRoot = Symbol('generateContextRoot');
 
 class Context {
   constructor(id, param) {
     this._id = id;
-    this._root = param.root || document.body;
+    this._root = null;
     this._description = param.description || '';
     this._handler = param.handler || null;
+    this[generateContextRoot](param.target || document.body);
+  }
+
+  [generateContextRoot](target) {
+    const node = document.createElement('section');
+    node.setAttribute('data-context', this.id);
+    target.appendChild(node);
+    this._root = node;
   }
 
   run() {
@@ -91,7 +100,6 @@ class Context {
     sampleView.textContent = view;
     this.root.appendChild(doc);
     this.root.appendChild(sampleView);
-    if ( !doc.getElementById ) doc.getElementById = (id) => doc.querySelector(`#${id}`);
     return doc;
   }
 
@@ -235,14 +243,73 @@ module.exports = Queue;
 
 },{}],6:[function(require,module,exports){
 'use strict';
+const Context = require('./Context.js');
+const initializeView = Symbol('initializeView');
+
+class Sample extends Context {
+  constructor(id, param) {
+    super(id, param);
+    this._htmlText = param.html;
+    this._document = null;
+    this[initializeView]();
+  }
+
+  [initializeView]() {
+    console.log('init');
+    const ul = document.createElement('ul');
+    ul.style = 'text-wrap: wrap;';
+    ul.style = 'border: 1px solid rgb(0,0,0); border-radius: 5px;';
+    const node = document.createElement('article');
+    node.id = `html-${this.id}`;
+    node.style = 'display: block;';
+    node.innerHTML = this.htmlText;
+    const sample = document.createElement('code');
+    sample.id = `code-${this.id}`;
+    sample.style = 'white-space: pre-wrap; display: none;';
+    sample.textContent = this.htmlText;
+    const toggle = document.createElement('button');
+    toggle.textContent = 'Toggle HTML Block';
+    toggle.addEventListener('click', () => {
+      if ( sample.style.display === 'block' ) {
+        sample.style.display = 'none';
+        node.style.display = 'block';
+      }
+      else {
+        sample.style.display = 'block';
+        node.style.display = 'none';
+      }
+    });
+    ul.appendChild(toggle);
+    ul.appendChild(node);
+    ul.appendChild(sample);
+    this.post(ul, {node: true});
+    this._document = this.root.getElementsByTagName('article')[0];
+    if ( !this.document.getElementById ) this.document.getElementById = (id) => this.document.querySelector(`#${id}`);
+  }
+  
+  get htmlText() {
+    return this._htmlText;
+  }
+
+  get document() {
+    return this._document;
+  }
+}
+
+module.exports = Sample;
+
+},{"./Context.js":2}],7:[function(require,module,exports){
+'use strict';
 const Queue = require('./Queue.js');
 const Context = require('./Context.js');
 const Describe = require('./Describe.js');
+const Sample = require('./Sample.js');
 const Test = require('./Test.js');
 const Expect = require('./Expect.js');
 const createContext = Symbol('createContext');
 const runContext = Symbol('runContext');
 const generateContextRoot = Symbol('generateContextRoot');
+const printResults = Symbol('printResults');
 
 class Taste {
   constructor() {
@@ -258,10 +325,9 @@ class Taste {
 
   [createContext](param) {
     const id = `_${Object.keys(this.context).length}`;
-    const node = this[generateContextRoot](param.target || null);
-    node.setAttribute('data-context', id);
-    param.root = node;
+    if ( !param.target ) param.target = (this.currentContext) ? this.currentContext.root : document.body;
     if ( param.isDescribe ) this.context[id] = new Describe(id, param);
+    else if ( param.isSample ) this.context[id] = new Sample(id, param);
     else if ( param.isTest ) this.context[id] = new Test(id, param);
     else if ( param.isExpect ) this.context[id] = new Expect(id, param);
     else this.context[id] = new Context(id, param);
@@ -272,13 +338,6 @@ class Taste {
     this._currentContext = context;
     context.run();
     this._currentContext = this.upOneContext();
-  }
-
-  [generateContextRoot](target = null) {
-    if ( !target ) target = (this.currentContext) ? this.currentContext.root : document.body;
-    const node = document.createElement('section');
-    target.appendChild(node);
-    return node;
   }
 
   /**
@@ -295,19 +354,7 @@ class Taste {
         this.runTests();
       });
     }
-    else {
-      const top = this.topLevelContext();
-      top.root.innerHTML += `
-        <p>${this.result.count} ${(this.result.count === 1) ? 'test' : 'tests'} completed.</p>
-        <p>${this.result.pass}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} passed.</p>
-      `;
-      if ( this.result.fail > 0 ) top.root.innerHTML += `
-        <p>${this.result.fail}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} failed.</p>
-      `;
-      top.root.innerHTML += `
-        <p>Elapsed Time: ${performance.now() - this.result.start}ms</p>
-      `;
-    }
+    else this[printResults]();
   }
 
   /**
@@ -332,6 +379,14 @@ class Taste {
   }
 
   /**
+   * Overrides document to the provided view
+   * @param {String} html 
+   */
+  sample(html) {
+    return this[createContext]({html: html, isSample: true}).document;
+  }
+
+  /**
    * Creates a new test context
    * @param {String} desc
    * @param {Function} handler
@@ -347,13 +402,18 @@ class Taste {
     return this[createContext]({target: this.currentContext.root.getElementsByTagName('ul')[0], value: value, isExpect: true, result: this.result});
   }
 
-  /**
-   * Overrides document to the provided view
-   * @param {Node} view 
-   */
-  sample(view) {
-    if ( this.currentContext ) return this.currentContext.sample(view);
-    return null;
+  [printResults]() {
+    const top = this.topLevelContext();
+    top.root.innerHTML += `
+      <p>${this.result.count} ${(this.result.count === 1) ? 'test' : 'tests'} completed.</p>
+      <p>${this.result.pass}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} passed.</p>
+    `;
+    if ( this.result.fail > 0 ) top.root.innerHTML += `
+      <p>${this.result.fail}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} failed.</p>
+    `;
+    top.root.innerHTML += `
+      <p>Elapsed Time: ${performance.now() - this.result.start}ms</p>
+    `;
   }
 
   timeout(t) {
@@ -401,7 +461,7 @@ class Taste {
 
 module.exports = Taste;
 
-},{"./Context.js":2,"./Describe.js":3,"./Expect.js":4,"./Queue.js":5,"./Test.js":7}],7:[function(require,module,exports){
+},{"./Context.js":2,"./Describe.js":3,"./Expect.js":4,"./Queue.js":5,"./Sample.js":6,"./Test.js":8}],8:[function(require,module,exports){
 'use strict';
 const Context = require('./Context.js');
 const updateProgress = Symbol('updateProgress');
