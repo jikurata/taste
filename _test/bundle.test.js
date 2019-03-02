@@ -15,6 +15,14 @@ function run() {
   const taste = new Taste();
   const root = document.getElementById('test');
   taste.prepare(root, () => {
+    taste.describe('This runs an asynchronous test for 7 seconds', () => {
+      taste.test('This test sets the timeout to 8000ms to pass the test before timeout', () => {
+        window.setTimeout(() => {
+          taste.expect(1).toBe(1);
+        }, 7000);
+        taste.timeout(8000);
+      });
+    });
     taste.describe('Adds two numbers together', () => {
       taste.test('Add(3,5) returns 8', () => {
         taste.expect(add(3,5)).toBe(8);
@@ -23,16 +31,27 @@ function run() {
         taste.expect(add(-3,5)).toBe(2);
       });
     });
-    taste.describe('Adds a div element to its target', () => {
+    taste.describe('This test uses sample to create a dom tree for the test', () => {
       const doc = taste.sample(`
         <section id="test">
-          <p>A div element should be added here</p>
+          <p>0</p>
         </section>
       `);
       taste.test('Target has one div element', () => {
         const node = doc.getElementById('test');
         appendDiv(node);
         taste.expect(doc.getElementsByTagName('div').length).toBe(1);
+      });
+    });
+    taste.describe('This test uses sample to create a dom tree for the test', () => {
+      const doc = taste.sample(`
+        <section id="test">
+          <p>1</p>
+        </section>
+      `);
+      taste.test('Sample creates a separate context from the previous sample', () => {
+        const node = doc.getElementById('test');
+        taste.expect(node.textContent.trim()).toBe('1');
       });
     });
     taste.describe('This test is designed to fail', () => {
@@ -46,7 +65,7 @@ function run() {
 
 window.addEventListener('load', run);
 
-},{"../lib/Taste.js":5}],2:[function(require,module,exports){
+},{"../lib/Taste.js":6}],2:[function(require,module,exports){
 'use strict';
 
 class Context {
@@ -59,7 +78,7 @@ class Context {
 
   run() {
     return new Promise((resolve, reject) => {
-      if (  typeof this.handler !== 'function' ) return reject(new Error(`Could not run context: ${this.handler} is not type ${Function}.`));
+      if (  typeof this.handler !== 'function' ) return reject(new Error(`Could not run context: ${this.handler} is not type Function.`));
       else if ( this.handler ) return resolve(this.handler());
       resolve();
     });
@@ -108,27 +127,59 @@ module.exports = Context;
 },{}],3:[function(require,module,exports){
 'use strict';
 const Context = require('./Context.js');
+const initializeView = Symbol('initializeView');
+
+class Describe extends Context {
+  constructor(id, param) {
+    super(id, param);
+    this[initializeView]();
+  }
+
+  [initializeView]() {
+    const view = `
+      <br>
+      <h1 class="title">${this.description}</h1>
+    `;
+    this.post(view);
+  }
+}
+
+module.exports = Describe;
+
+},{"./Context.js":2}],4:[function(require,module,exports){
+'use strict';
+const Context = require('./Context.js');
+const initializeView = Symbol('initializeView');
+const resolveExpect = Symbol('resolveExpect');
 
 class Expect extends Context {
   constructor(id, param) {
     super(id, param);
     this._value = param.value;
     this._result = param.result;
+    this[initializeView]();
+  }
+
+  [initializeView]() {
+    const view = `
+      <ul>
+        <p class="expect"></p>
+        <p class="status"></p>
+      </ul>
+    `;
+    this.post(view);
+  }
+
+  [resolveExpect](bool) {
+    if ( bool ) this.result.pass++;
+    else this.result.fail++;
+    this.root.getElementsByClassName('status')[0].innerHTML = `Status: <span class="${(bool) ? 'pass' : 'fail'}">${(bool) ? 'PASS' : 'FAIL'}</span>`
   }
 
   toBe(value) {
-    const passed = (this.value === value);
-    if ( passed ) this.result.pass++;
-    else this.result.fail++;
-    const result = {
-      passed: passed,
-      status: (passed) ? 'Passed' : 'Failed'
-    };
-    const view = `
-      <p>Expected ${this.value} to be ${value}</p>
-      <p>Status: <span class="${(result.passed) ? 'pass' : 'fail'}">${result.status}</span></p>
-    `;
-    this.post(view);
+    this._expectValue = value;
+    this.root.getElementsByClassName('expect')[0].innerHTML = `Expected ${this.value} to be ${value}`;
+    this[resolveExpect](this.value == value);
   }
 
   get result() {
@@ -146,7 +197,7 @@ class Expect extends Context {
 
 module.exports = Expect;
 
-},{"./Context.js":2}],4:[function(require,module,exports){
+},{"./Context.js":2}],5:[function(require,module,exports){
 'use strict';
 
 class Queue {
@@ -182,15 +233,16 @@ class Queue {
 
 module.exports = Queue;
 
-},{}],5:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 'use strict';
 const Queue = require('./Queue.js');
 const Context = require('./Context.js');
+const Describe = require('./Describe.js');
 const Test = require('./Test.js');
 const Expect = require('./Expect.js');
 const createContext = Symbol('createContext');
 const runContext = Symbol('runContext');
-const generateView = Symbol('generateView');
+const generateContextRoot = Symbol('generateContextRoot');
 
 class Taste {
   constructor() {
@@ -206,10 +258,11 @@ class Taste {
 
   [createContext](param) {
     const id = `_${Object.keys(this.context).length}`;
-    const node = this[generateView](param);
+    const node = this[generateContextRoot](param.target || null);
     node.setAttribute('data-context', id);
     param.root = node;
-    if ( param.isTest ) this.context[id] = new Test(id, param);
+    if ( param.isDescribe ) this.context[id] = new Describe(id, param);
+    else if ( param.isTest ) this.context[id] = new Test(id, param);
     else if ( param.isExpect ) this.context[id] = new Expect(id, param);
     else this.context[id] = new Context(id, param);
     return this.context[id];
@@ -221,14 +274,9 @@ class Taste {
     this._currentContext = this.upOneContext();
   }
 
-  [generateView](param) {
-    const view = param.view || null;
-    const target = (param.target) ? param.target : (this.currentContext) ? this.currentContext.root : document.body;
-    const node = document.createElement(param.tagName || 'section');
-    if ( view ) {
-      if ( typeof view === 'string' ) node.innerHTML = view;
-      else node.appendChild(view);
-    }
+  [generateContextRoot](target = null) {
+    if ( !target ) target = (this.currentContext) ? this.currentContext.root : document.body;
+    const node = document.createElement('section');
     target.appendChild(node);
     return node;
   }
@@ -237,6 +285,7 @@ class Taste {
    * Executes tests in the queue
    */
   runTests() {
+    if ( !this.result.start ) this.result.start = performance.now();
     this._currentContext = this.queue.next();
     if ( this.currentContext ) {
       this.currentContext.run()
@@ -254,6 +303,9 @@ class Taste {
       `;
       if ( this.result.fail > 0 ) top.root.innerHTML += `
         <p>${this.result.fail}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} failed.</p>
+      `;
+      top.root.innerHTML += `
+        <p>Elapsed Time: ${performance.now() - this.result.start}ms</p>
       `;
     }
   }
@@ -275,13 +327,7 @@ class Taste {
    * @param {Function} handler
    */
   describe(desc, handler) {
-    const node = document.createElement('section');
-    const view = `
-      <br>
-      <p class="title">${desc}</p>
-    `;
-    node.innerHTML = view;
-    const context = this[createContext]({tagName: 'ul', view: node, description: desc, handler: handler});
+    const context = this[createContext]({description: desc, handler: handler, isDescribe: true});
     this[runContext](context);
   }
 
@@ -291,20 +337,14 @@ class Taste {
    * @param {Function} handler
    */
   test(desc, handler) {
-    const node = document.createElement('section');
-    const view = `
-      <p class="title">${desc}</p>
-      <p>Progress: <span class="progress">In queue...</span()></p>
-    `;
-    node.innerHTML = view;
-    const context = this[createContext]({tagName: 'ul', view: node, description: desc, handler: handler, isTest: true});
+    const context = this[createContext]({description: desc, handler: handler, isTest: true});
     this.queue.push(context);
     this.result.count++;
   }
 
   expect(value) {
     if ( this.currentContext.isTest ) this.currentContext.forceResolve();
-    return this[createContext]({tagName: 'ul', value: value, isExpect: true, result: this.result});
+    return this[createContext]({target: this.currentContext.root.getElementsByTagName('ul')[0], value: value, isExpect: true, result: this.result});
   }
 
   /**
@@ -361,51 +401,116 @@ class Taste {
 
 module.exports = Taste;
 
-},{"./Context.js":2,"./Expect.js":3,"./Queue.js":4,"./Test.js":6}],6:[function(require,module,exports){
+},{"./Context.js":2,"./Describe.js":3,"./Expect.js":4,"./Queue.js":5,"./Test.js":7}],7:[function(require,module,exports){
 'use strict';
 const Context = require('./Context.js');
+const updateProgress = Symbol('updateProgress');
 const setTimeout = Symbol('setTimeout');
+const initializeView = Symbol('initializeView');
+const printSource = Symbol('printSource');
+
+const TEST_STATE = {
+  0: 'In queue',
+  1: 'Running',
+  2: 'Complete',
+  3: 'Error'
+}
 
 class Test extends Context {
   constructor(id, param) {
     super(id, param);
+    this._duration = 0;
+    this._interval = null;
     this._timer = null;
+    this.runResolve = null;
+    this.runReject = null;
     this._timeout = param.timeout || 5000;
+    this[initializeView]();
+    this[updateProgress](0);
+  }
+
+  [initializeView]() {
+    const view = `
+      <ul>
+        <p class="title">${this.description}</p>
+        <ul class="info">
+          <p>Progress: <span class="progress">In queue</span></p>
+          <p>Duration: <span class="duration">0</span>ms</p>
+          <p class="source"></p>
+        </ul>
+      </ul>
+    `;
+    this.post(view);
   }
 
   run() {
+    const start = Date.now();
     return new Promise((resolve, reject) => {
+      this._interval = window.setInterval(() => {
+        this.duration = Date.now() - start;
+      }, 1);
+      this[updateProgress](1);
       this.runResolve = resolve;
-      this.root.querySelector('.progress').textContent = 'Running...';
-      this[setTimeout](() => {
-        const error = new Error(`Test timed out after ${this.timeout}ms.`);
-        const view = `<pclass="error">${error}</p>`;
-        this.post(view);
-        reject(error);
-      });
-      const result = this.handler(this.forceResolve);
-      // If result is falsy and not false, then assume the test is asynchronous
-      if ( !result && result !== false ) {
-      }
-      else resolve();
+      this.runReject = reject;
+      this[setTimeout]();
+      this.handler();
     })
     .then(() => {
-      this.root.querySelector('.progress').textContent = 'Complete';
-      this.root.innerHTML += `<p>Source: ${this.handler.toString()}</p>`;
+      this[updateProgress](2);
     })
     .catch(err => {
-      this.root.querySelector('.progress').textContent = err;
+      this[updateProgress](3);
+      const view = `<p class="error">${err}</p>`;
+      this.post(view);
+    })
+    .finally(() => {
+      window.clearInterval(this.interval);
+      this[printSource]();
+      this.runResolve = null;
+      this.runReject = null;
     });
   }
 
-  forceResolve() {
-    if ( this.timer ) window.clearTimeout(this.timer);
-    if ( this.runResolve ) this.runResolve();
+  [printSource]() {
+    this.root.querySelector('.source').innerHTML = `
+      <p>Source:</p>
+      <code>${this.handler.toString()}</code>
+    `;
   }
 
-  [setTimeout](f) {
+  [updateProgress](n) {
+    this.root.querySelector('.progress').textContent = TEST_STATE[n];
+  }
+
+  [setTimeout]() {
     if ( this.timer ) window.clearTimeout(this.timer);
-    this._timer = window.setTimeout(f, this.timeout);
+    if ( this.runReject ) this._timer = window.setTimeout(() => {
+      const error = new Error(`Test timed out after ${this.timeout}ms.`);
+      this.forceReject(error);
+    }, this.timeout);
+  }
+
+  forceResolve(val) {
+    if ( this.timer ) window.clearTimeout(this.timer);
+    if ( this.runResolve ) this.runResolve(val);
+  }
+
+  forceReject(err) {
+    if ( this.timer ) window.clearTimeout(this.timer);
+    if ( this.runReject ) this.runReject(err);
+  }
+
+  get duration() {
+    return this._duration;
+  }
+
+  set duration(t) {
+    this._duration = t;
+    this.root.querySelector('.duration').textContent = this._duration;
+  }
+
+  get interval() {
+    return this._interval;
   }
 
   get timer() {
