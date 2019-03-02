@@ -52,16 +52,16 @@ window.addEventListener('load', run);
 class Context {
   constructor(id, param) {
     this._id = id;
-    this._target = param.target || document.body;
+    this._root = param.root || document.body;
     this._description = param.description || '';
     this._handler = param.handler || null;
   }
 
   run() {
     return new Promise((resolve, reject) => {
-        if (  typeof this.handler !== 'function' ) return reject(new Error(`Could not run context: ${this.handler} is not type ${Function}.`));
-        else if ( this.handler ) return resolve(this.handler());
-        resolve();
+      if (  typeof this.handler !== 'function' ) return reject(new Error(`Could not run context: ${this.handler} is not type ${Function}.`));
+      else if ( this.handler ) return resolve(this.handler());
+      resolve();
     });
   }
 
@@ -70,8 +70,8 @@ class Context {
     const doc = document.createElement('div');
     doc.innerHTML = view;
     sampleView.textContent = view;
-    this.target.appendChild(doc);
-    this.target.appendChild(sampleView);
+    this.root.appendChild(doc);
+    this.root.appendChild(sampleView);
     if ( !doc.getElementById ) doc.getElementById = (id) => doc.querySelector(`#${id}`);
     return doc;
   }
@@ -80,18 +80,18 @@ class Context {
     const isNode = (options.hasOwnProperty('node')) ? options.node : false;
     const append = (options.hasOwnProperty('append')) ? options.append : false;
     if ( !isNode ) {
-      if ( append ) this.target.innerHTML += html;
-      else this.target.innerHTML = html;
+      if ( append ) this.root.innerHTML += html;
+      else this.root.innerHTML = html;
     }
-    else this.target.appendChild(html);
+    else this.root.appendChild(html);
   }
 
   get id() {
     return this._id;
   }
   
-  get target() {
-    return this._target;
+  get root() {
+    return this._root;
   }
 
   get description() {
@@ -190,7 +190,7 @@ const Test = require('./Test.js');
 const Expect = require('./Expect.js');
 const createContext = Symbol('createContext');
 const runContext = Symbol('runContext');
-const closeContext = Symbol('closeContext');
+const generateView = Symbol('generateView');
 
 class Taste {
   constructor() {
@@ -205,14 +205,10 @@ class Taste {
   }
 
   [createContext](param) {
-    console.log('s', this.currentContext, this.upOneContext());
     const id = `_${Object.keys(this.context).length}`;
-    if ( param.target ) param.target.setAttribute('data-context', id);
-    else if ( param.view ) {
-      param.view.setAttribute('data-context', id);
-      this.currentContext.post(param.view, {node: true});
-      param.target = document.querySelector(`[data-context="${id}"]`);
-    }
+    const node = this[generateView](param);
+    node.setAttribute('data-context', id);
+    param.root = node;
     if ( param.isTest ) this.context[id] = new Test(id, param);
     else if ( param.isExpect ) this.context[id] = new Expect(id, param);
     else this.context[id] = new Context(id, param);
@@ -221,10 +217,20 @@ class Taste {
 
   [runContext](context) {
     this._currentContext = context;
-    context.run()
-    .finally(() => {
-      this._currentContext = this.upOneContext();
-    });
+    context.run();
+    this._currentContext = this.upOneContext();
+  }
+
+  [generateView](param) {
+    const view = param.view || null;
+    const target = (param.target) ? param.target : (this.currentContext) ? this.currentContext.root : document.body;
+    const node = document.createElement(param.tagName || 'section');
+    if ( view ) {
+      if ( typeof view === 'string' ) node.innerHTML = view;
+      else node.appendChild(view);
+    }
+    target.appendChild(node);
+    return node;
   }
 
   /**
@@ -242,11 +248,11 @@ class Taste {
     }
     else {
       const top = this.topLevelContext();
-      top.target.innerHTML += `
+      top.root.innerHTML += `
         <p>${this.result.count} ${(this.result.count === 1) ? 'test' : 'tests'} completed.</p>
         <p>${this.result.pass}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} passed.</p>
       `;
-      if ( this.result.fail > 0 ) top.target.innerHTML += `
+      if ( this.result.fail > 0 ) top.root.innerHTML += `
         <p>${this.result.fail}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} failed.</p>
       `;
     }
@@ -269,14 +275,13 @@ class Taste {
    * @param {Function} handler
    */
   describe(desc, handler) {
-    const node = document.createElement('ul');
+    const node = document.createElement('section');
     const view = `
       <br>
       <p class="title">${desc}</p>
     `;
     node.innerHTML = view;
-    if ( this.currentContext && this.currentContext.isTest ) this.currentContext = this.upOneContext();
-    const context = this[createContext]({view: node, description: desc, handler: handler});
+    const context = this[createContext]({tagName: 'ul', view: node, description: desc, handler: handler});
     this[runContext](context);
   }
 
@@ -286,21 +291,20 @@ class Taste {
    * @param {Function} handler
    */
   test(desc, handler) {
-    const node = document.createElement('ul');
+    const node = document.createElement('section');
     const view = `
       <p class="title">${desc}</p>
       <p>Progress: <span class="progress">In queue...</span()></p>
     `;
     node.innerHTML = view;
-    const context = this[createContext]({view: node, description: desc, handler: handler, isTest: true});
+    const context = this[createContext]({tagName: 'ul', view: node, description: desc, handler: handler, isTest: true});
     this.queue.push(context);
     this.result.count++;
   }
 
   expect(value) {
-    const node = document.createElement('section');
     if ( this.currentContext.isTest ) this.currentContext.forceResolve();
-    return this[createContext]({view: node, value: value, isExpect: true, result: this.result});
+    return this[createContext]({tagName: 'ul', value: value, isExpect: true, result: this.result});
   }
 
   /**
@@ -326,8 +330,8 @@ class Taste {
   }
 
   upOneContext() {
-    if ( !this._currentContext ) return;
-    let parent = this.currentContext.target.parentNode;
+    if ( !this._currentContext ) return null;
+    let parent = this.currentContext.root.parentNode;
     while ( parent && parent.nodeType === 1) {
       const id = parent.getAttribute('data-context');
       if ( id && this.context[id] ) {
@@ -372,7 +376,7 @@ class Test extends Context {
   run() {
     return new Promise((resolve, reject) => {
       this.runResolve = resolve;
-      this.target.querySelector('.progress').textContent = 'Running...';
+      this.root.querySelector('.progress').textContent = 'Running...';
       this[setTimeout](() => {
         const error = new Error(`Test timed out after ${this.timeout}ms.`);
         const view = `<pclass="error">${error}</p>`;
@@ -386,11 +390,11 @@ class Test extends Context {
       else resolve();
     })
     .then(() => {
-      this.target.querySelector('.progress').textContent = 'Complete';
-      this.target.innerHTML += `<p>Source: ${this.handler.toString()}</p>`;
+      this.root.querySelector('.progress').textContent = 'Complete';
+      this.root.innerHTML += `<p>Source: ${this.handler.toString()}</p>`;
     })
     .catch(err => {
-      this.target.querySelector('.progress').textContent = err;
+      this.root.querySelector('.progress').textContent = err;
     });
   }
 
