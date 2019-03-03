@@ -50,7 +50,7 @@ function run() {
       `);
       taste.test('Sample creates a separate context from the previous sample', () => {
         const node = doc.getElementById('test');
-        taste.expect(node.textContent.trim()).toBe('1');
+        taste.expect(node.textContent.trim()).toBe(1);
       });
     });
     taste.describe('This test is designed to fail', () => {

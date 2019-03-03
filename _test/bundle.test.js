@@ -51,7 +51,7 @@ function run() {
       `);
       taste.test('Sample creates a separate context from the previous sample', () => {
         const node = doc.getElementById('test');
-        taste.expect(node.textContent.trim()).toBe('1');
+        taste.expect(node.textContent.trim()).toBe(1);
       });
     });
     taste.describe('This test is designed to fail', () => {
@@ -80,9 +80,33 @@ class Context {
 
   [generateContextRoot](target) {
     const node = document.createElement('section');
-    node.setAttribute('data-context', this.id);
+    node.style.position = 'relative';
+    node.style.padding = '5px';
+    node.style.borderRadius = '5px';
+    const root = document.createElement('section');
+    root.setAttribute('data-context', this.id);
+    root.style.overflow = 'hidden';
+    root.style.height = '100%';
+    root.style.padding = '5px';
+    const toggle = document.createElement('button');
+    toggle.style.position = 'relative';
+    toggle.style.top = '0';
+    toggle.style.right = '0';
+    toggle.textContent = '-';
+    toggle.addEventListener('click', () => {
+      if ( root.style.height === '100%' ) {
+        root.style.height = '0';
+        toggle.textContent = 'v';
+      }
+      else {
+        root.style.height = '100%';
+        toggle.textContent = '-';
+      }
+    });
+    node.appendChild(toggle);
+    node.appendChild(root);
     target.appendChild(node);
-    this._root = node;
+    this._root = root;
   }
 
   run() {
@@ -91,16 +115,6 @@ class Context {
       else if ( this.handler ) return resolve(this.handler());
       resolve();
     });
-  }
-
-  sample(view) {
-    const sampleView = document.createElement('code');
-    const doc = document.createElement('div');
-    doc.innerHTML = view;
-    sampleView.textContent = view;
-    this.root.appendChild(doc);
-    this.root.appendChild(sampleView);
-    return doc;
   }
 
   post(html, options = {append: true, node: false}) {
@@ -144,11 +158,13 @@ class Describe extends Context {
   }
 
   [initializeView]() {
+    const node = document.createElement('section');
     const view = `
       <br>
-      <h1 class="title">${this.description}</h1>
+      <p class="title">${this.description}</p>
     `;
-    this.post(view);
+    node.innerHTML = view;
+    this.post(node, {node: true});
   }
 }
 
@@ -169,25 +185,36 @@ class Expect extends Context {
   }
 
   [initializeView]() {
+    const ul = document.createElement('ul');
     const view = `
-      <ul>
-        <p class="expect"></p>
-        <p class="status"></p>
-      </ul>
+      <p class="expect"></p>
+      <p class="status"></p>
     `;
-    this.post(view);
+    ul.innerHTML = view;
+    this.post(ul, {node: true});
+    this.root.style.border = '0';
   }
 
   [resolveExpect](bool) {
-    if ( bool ) this.result.pass++;
-    else this.result.fail++;
+    if ( bool ) {
+      this.result.pass++;
+      this.root.style.border = '2px solid rgb(60,120,120)';
+    }
+    else {
+      this.result.fail++;
+      this.root.style.border = '2px solid rgb(255,120,120)';
+    }
     this.root.getElementsByClassName('status')[0].innerHTML = `Status: <span class="${(bool) ? 'pass' : 'fail'}">${(bool) ? 'PASS' : 'FAIL'}</span>`
   }
 
   toBe(value) {
-    this._expectValue = value;
-    this.root.getElementsByClassName('expect')[0].innerHTML = `Expected ${this.value} to be ${value}`;
+    this.root.getElementsByClassName('expect')[0].innerHTML = `Expected ${this.value} == ${value}`;
     this[resolveExpect](this.value == value);
+  }
+
+  toEqual(value) {
+    this.root.getElementsByClassName('expect')[0].innerHTML = `Expected ${this.value} === ${value}`;
+    this[resolveExpect](this.value === value);
   }
 
   get result() {
@@ -255,7 +282,6 @@ class Sample extends Context {
   }
 
   [initializeView]() {
-    console.log('init');
     const ul = document.createElement('ul');
     ul.style = 'text-wrap: wrap;';
     ul.style = 'border: 1px solid rgb(0,0,0); border-radius: 5px;';
@@ -308,7 +334,6 @@ const Test = require('./Test.js');
 const Expect = require('./Expect.js');
 const createContext = Symbol('createContext');
 const runContext = Symbol('runContext');
-const generateContextRoot = Symbol('generateContextRoot');
 const printResults = Symbol('printResults');
 
 class Taste {
@@ -404,16 +429,18 @@ class Taste {
 
   [printResults]() {
     const top = this.topLevelContext();
-    top.root.innerHTML += `
+    const node = document.createElement('section');
+    node.innerHTML += `
       <p>${this.result.count} ${(this.result.count === 1) ? 'test' : 'tests'} completed.</p>
       <p>${this.result.pass}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} passed.</p>
     `;
-    if ( this.result.fail > 0 ) top.root.innerHTML += `
+    if ( this.result.fail > 0 ) node.innerHTML += `
       <p>${this.result.fail}/${this.result.count} ${(this.result.pass === 1) ? 'test' : 'tests'} failed.</p>
     `;
-    top.root.innerHTML += `
+    node.innerHTML += `
       <p>Elapsed Time: ${performance.now() - this.result.start}ms</p>
     `;
+    top.post(node, {node: true});
   }
 
   timeout(t) {
@@ -490,17 +517,17 @@ class Test extends Context {
   }
 
   [initializeView]() {
+    const ul = document.createElement('ul');
     const view = `
-      <ul>
-        <p class="title">${this.description}</p>
-        <ul class="info">
-          <p>Progress: <span class="progress">In queue</span></p>
-          <p>Duration: <span class="duration">0</span>ms</p>
-          <p class="source"></p>
-        </ul>
+      <p class="title">${this.description}</p>
+      <ul class="info">
+        <p>Progress: <span class="progress">In queue</span></p>
+        <p>Duration: <span class="duration">0</span>ms</p>
+        <p class="source"></p>
       </ul>
     `;
-    this.post(view);
+    ul.innerHTML = view;
+    this.post(ul, {node: true});
   }
 
   run() {
