@@ -42,7 +42,7 @@ function asyncFn() {
 
 taste.test('Resolves test in 6000ms', () => {
     asyncFn(); // test resolves after timeout fn triggers
-    taste.timeout(7000); // Change test timeout to 7000ms to prevent the test from throwing before asyncFn is called. Default timeout is 5000ms
+    taste.timeout(7000); // Change test timeout to 7000ms to prevent the test from throwing before the timer triggers. Default timeout is 5000ms
 });
 ```
 ## Plans
