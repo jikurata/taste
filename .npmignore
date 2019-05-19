@@ -1,4 +1,4 @@
-_test/
+test/
 build/
 src/
 .gitignore

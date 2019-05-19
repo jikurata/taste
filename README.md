@@ -60,6 +60,9 @@ Taste.flavor('Sample Test: Asynchronous Code')
 ```
 ## Version Log
 ---
+### v0.0.2
+- Fix index.js to properly export Taste
+- Add src/ to npmignore
 ### v0.0.1
 - Refactored Taste to utilize chainable functions
 - Replaced Context class with Flavor class
