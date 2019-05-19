@@ -61,6 +61,7 @@ class Expectation extends Emitter {
         test: null,
         result: null,
         IS_READY: false,
+        WINDOW_LOADED: false,
         IS_COMPLETE: false
       }),
       enumerable: true,
@@ -78,6 +79,7 @@ class Expectation extends Emitter {
     
     this.state.on('change', (p, v) => {
       if ( !this.state.IS_READY &&
+            this.state.WINDOW_LOADED &&
             this.state.evaluator && 
             this.state.comparator && 
             this.state.test ) {
@@ -86,6 +88,7 @@ class Expectation extends Emitter {
       }
     });
     this.on('ready', () => this[execute]());
+    window.addEventListener('load', () => this.state.WINDOW_LOADED = true);
   }
 
   /**
@@ -107,7 +110,9 @@ class Expectation extends Emitter {
         this.flavor.getElement('duration').textContent = duration;
         if ( duration >= this.state.timeout ) reject(`Test timed out after ${duration} ms`);
       }, 1);
-      this.state.test();
+      
+      // Pass the sample HTML if available as an argument for the test
+      this.state.test(this.flavor.getElement('sampleAsHTML'));
     })
     .then((value) => {
       const result = this.state.comparator(value);
@@ -124,19 +129,54 @@ class Expectation extends Emitter {
   }
 
   update(expression) {
-    if ( !this.flavor.isInDOM ) return this.flavor.once('IN_DOM', () => this.update(expression));
+    if ( !this.flavor.isReady ) return this.flavor.once('IS_READY', () => this.update(expression));
     this.flavor.getElement('expect').textContent = `${expression}`;
   }
 
-  toBeTruthy() {
-    this.state.comparator = (v) => { return (v) };
-    this.update(`${this.state.evaluator} to be a truthy value`);
+  toBeLessThan(upperBound, closed = true) {
+    this.state.comparator = (v) => {
+      let inRange = true;
+      if ( closed ) inRange = v <= upperBound;
+      else inRange = v < upperBound;
+      return inRange;
+    };
+    this.update(`${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`);
+    return this.flavor;
+  }
+
+  toBeGreaterThan(lowerBound, closed = true) {
+    this.state.comparator = (v) => {
+      let inRange = true;
+      if ( closed ) inRange = v >= lowerBound;
+      else inRange = v > lowerBound;
+      return inRange;
+    };
+    this.update(`${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator}`);
+    return this.flavor;
+  }
+
+  toBeInRange(lowerBound, upperBound, param = {lower: 'closed', upper: 'closed'}) {
+    this.state.comparator = (v) => {
+      let inRange = true;
+      if ( param.lower === 'closed' ) inRange = v >= lowerBound;
+      else inRange = v > lowerBound;
+      if ( param.upper === 'closed' ) inRange = v <= upperBound;
+      else inRange = v < upperBound;
+      return inRange;
+    };
+    this.update(`${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`);
     return this.flavor;
   }
 
   toBeFalsy() {
     this.state.comparator = (v) => { return !(v) };
     this.update(`${this.state.evaluator} to be a falsy value`);
+    return this.flavor;
+  }
+
+  toBeTruthy() {
+    this.state.comparator = (v) => { return (v) };
+    this.update(`${this.state.evaluator} to be a truthy value`);
     return this.flavor;
   }
 
@@ -180,6 +220,7 @@ const Expectation = require('./Expectation.js');
 const init = Symbol('init');
 const appendToDOM = Symbol('appendToDOM');
 const updateProgress = Symbol('updateProgress');
+const updateSample = Symbol('updateSample');
 
 class Flavor extends Emitter {
   constructor(id, title, taste) {
@@ -207,7 +248,8 @@ class Flavor extends Emitter {
     });
     Object.defineProperty(this, 'state', {
       value: new State({
-        IN_DOM: false,
+        sample: null,
+        IS_READY: false,
         IN_PROGRESS: false,
         IS_COMPLETE: false,
         ERROR: false
@@ -229,8 +271,8 @@ class Flavor extends Emitter {
       this.state.IS_COMPLETE = true;
     });
     this.expectation.on('error', (err) => {
-      this.state.IS_COMPLETE = true;
       this.state.ERROR = err;
+      this.state.IS_COMPLETE = true;
     });
 
     if ( this.taste.isReady ) {
@@ -249,39 +291,46 @@ class Flavor extends Emitter {
   [appendToDOM]() {
     const node = document.createElement('article');
     node.setAttribute('data-flavor', this.id);
+    node.className = 'taste-flavor';
     const html = `
       <header>
-        <h3>Flavor: <span data-flavor="title">${this.title}</span></h3>
-        <h4>Status: <span data-flavor="status">Preparing...</span></h4>
-        <p>Duration: <span data-flavor="duration">0</span>ms</p>
-        <p>Timeout: <span data-flavor="timeout">2500</span>ms</p>
+        <h2 class="taste-flavor-title" data-flavor="title">${this.title}</h2>
       </header>
       <section data-flavor="content">
+        <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
+        <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration">0</span>ms</p>
+        <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout">2500</span>ms</p>
+        <p class="taste-flavor-content">Description: <span class="taste-flavor-description" data-flavor="description"></span></p>
         <section>
-          <p>Description: <span data-flavor="description"></span></p>
+          <p>DOM:</p>
+          <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
+          <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
         </section>
-        <section data-flavor="sample"></section>
-        <section>
-          <p>Test: <span data-flavor="test"></span></p>
-        </section>
-        <section>
-          <p>Expects: <span data-flavor="expect"></span></p>
-        </section>
-        <section>
-          <p>Result: <span data-flavor="result"></span></p>
-        </section>
+        <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
+        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect" data-flavor="expect"></span></p>
+        <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
       </section>
     `;
     node.innerHTML = html;
     this.taste.root.appendChild(node);
     this.root = node;
-    this.state.IN_DOM = true;
+    this.state.IS_READY = true;
   }
 
   [updateProgress]() {
     const status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
     (this.isInProgress) ? 'In progress...' : 'Preparing...';
     this.getElement('status').textContent = status;
+  }
+
+  [updateSample]() {
+    const sampleAsHTML = this.getElement('sampleAsHTML');
+    const sampleAsText = this.getElement('sampleAsText');
+    const sampleRoot = sampleAsHTML.children[0];
+
+    // Only overwrite innerHTML of sampleAsHTML when there is no sample root
+    if ( !sampleRoot ) sampleAsHTML.innerHTML = this.state.sample;
+    else sampleAsText.textContent = sampleAsHTML.innerHTML;
   }
 
   /**
@@ -293,6 +342,7 @@ class Flavor extends Emitter {
       this.getElement('title').textContent = this.title;
       this.getElement('timeout').textContent = this.expectation.state.timeout;
       this.getElement('description').textContent = this.description;
+      this[updateSample]();
       this.getElement('test').textContent = this.expectation.testToString();
       this.getElement('result').textContent = (this.state.ERROR) ? this.state.ERROR : 
         (this.isComplete) ? this.expectation.state.result : 'Pending...';
@@ -301,9 +351,10 @@ class Flavor extends Emitter {
 
   /**
    * Creates a subtree in the dom to perform a test on
+   * @param {String} html
    */
   sample(html) {
-    this.sample = html;
+    this.state.sample = `${html}`;
     this.update();
     return this;
   }
@@ -350,8 +401,8 @@ class Flavor extends Emitter {
     return null;
   }
 
-  get isInDOM() {
-    return this.state.IN_DOM;
+  get isReady() {
+    return this.state.IS_READY;
   }
 
   get isInProgress() {
@@ -435,8 +486,8 @@ const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const Flavor = require('./Flavor.js');
 const init = Symbol('init');
-const writeResults = Symbol('writeResults');
-const runContext = Symbol('runContext');
+const start = Symbol('start');
+const recordResults = Symbol('recordResults');
 const printResults = Symbol('printResults');
 
 let instance = null;
@@ -472,12 +523,15 @@ class Taste extends Emitter {
       value: {
         'count': 0,
         'pass': 0,
-        'fail': 0
+        'fail': 0,
+        'error': 0,
+        'elapsedTime': 0
       },
       enumerable: true,
       writable: false,
       configurable: false
     });
+    this[start] = null;
     this[init]();
   }
 
@@ -496,6 +550,7 @@ class Taste extends Emitter {
       this.root = document.body;
       this.state.IS_READY = true;
     });
+    this[start] = Date.now();
   }
 
   /**
@@ -504,7 +559,7 @@ class Taste extends Emitter {
    * @param {String} selector 
    */
   prepare(selector) {
-    if ( !this.isReady ) return this.once('IS_READY', () => this.prepare(selector));
+    if ( !this.isReady ) return this.once('ready', () => this.prepare(selector));
     this.root = document.querySelector(selector);
   }
 
@@ -514,13 +569,35 @@ class Taste extends Emitter {
   flavor(title) {
     const id = `flavor${Object.keys(this.flavors).length}`;
     const flavor = new Flavor(id, title, this);
-    flavor.on('done', (result) => this[writeResults](result));
+    flavor.once('IS_COMPLETE', () => this[recordResults](flavor));
     this.flavors[id] = flavor;
     return flavor;
   }
 
-  [writeResults]() {
+  [recordResults](flavor) {
+    this.result.count++;
+    if ( flavor.expectation.state.result === 'Passed' ) this.result.pass++;
+    else if ( flavor.expectation.state.result === 'Failed' ) this.result.fail++;
+    else this.result.error++;
+    if ( this.result.count === Object.keys(this.flavors).length ) {
+      this.result.elapsedTime = Date.now() - this[start];
+      this[printResults]();
+    }
+  }
 
+  [printResults]() {
+    const node = document.createElement('section');
+    node.className = 'taste-summary';
+    node.innerHTML = `
+      <h2 class="taste-summary-title">Summary:</h2>
+      <p class="taste-summary-content">Number of tests: <span class="taste-summary-count" data-taste="testCount">${this.result.count}</span></p>
+      <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${this.result.pass}/${this.result.count}</span></p>
+      <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${this.result.fail}/${this.result.count}</span></p>
+      <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${this.result.error}/${this.result.count}</span></p>
+      <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${this.result.elapsedTime}ms</span></p>
+    `;
+    this.root.appendChild(node.cloneNode(true));
+    this.root.insertAdjacentElement('afterbegin', node.cloneNode(true));
   }
 
   get isReady() {
@@ -809,12 +886,20 @@ function appendDiv(target) {
 
 Taste.prepare('#test');
 
-Taste.flavor('add() function')
-  .describe('Calculates the sum of two numbers')
+Taste.flavor('Synchronous pass test')
+  .describe('Add 4 + 1')
   .test(() => {
     Taste.profile.addResult = add(4,1);
   })
   .expect('addResult').toEqual(5);
+
+Taste.flavor('Synchronous fail test')
+  .describe('Add 4 + 1')
+  .test(() => {
+    Taste.profile.addResult = add(4,1);
+  })
+  .expect('addResult').toEqual(3);
+
 Taste.flavor('Asynchronous pass test')
   .timeout(5000)
   .describe('Resolves after 3000ms')
@@ -826,12 +911,35 @@ Taste.flavor('Asynchronous pass test')
   .expect('asyncResult').toBeTruthy();
 
 Taste.flavor('Asynchronous fail test')
-  .describe('Does not resolve after 2500ms')
+  .timeout(5000)
+  .describe('Does not resolve after 3000ms')
+  .test(() => {
+    window.setTimeout(() => {
+      Taste.profile.asyncResult = true;
+    }, 3000);
+  })
+  .expect('asyncResult').toBeFalsy();
+
+Taste.flavor('Asynchronous timeout test')
+  .describe('Test exceeds timeout')
   .test(() => {
     window.setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
   .expect('asyncResult').toBeTruthy();
+
+Taste.flavor('Taste sample dom test')
+  .describe('Test contains a sample of html to be used in the test')
+  .sample(`
+    <section class="sample">
+      <p>Sample Html Test</p>
+    </section>
+  `)
+  .test((sample) => {
+    sample.innerHTML += '<p>This text was added during the test.</p>';
+    Taste.profile.childrenLength = sample.children.length;
+  })
+  .expect('childrenLength').toBe(2);
 
 },{"../lib/Taste.js":5}]},{},[10]);
