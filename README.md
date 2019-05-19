@@ -1,4 +1,4 @@
-# Taste v0.0.1
+# Taste v0.0.2
 Test client-side code directly in a web browser
 ---
 ## Install
