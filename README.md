@@ -1,4 +1,4 @@
-# Taste v0.0.0
+# Taste v0.0.1
 Test client-side code directly in a web browser
 ---
 ## Install
@@ -6,50 +6,61 @@ Test client-side code directly in a web browser
 npm install @jikurata/taste
 ```
 ## Usage
-Taste utilizes familiar syntaxes from Jest and Mocha.
+Taste utilizes chainable functions to produce simple, organized code structures
 ```
-const Taste = require('@jikurata/taste');
-const taste = new Taste();
+const Taste = require('../lib/Taste.js');
 
-// test these
-function add(x,y) { return x+y; }
-function div(el) { el.appendChild(document.createElement('div')); }
-
-taste.describe('Returns the sum of two numbers', () => {
-    taste.describe('Returns 8', () => {
-        const sum = add(3,5);
-        taste.expect(sum).tobe(8);
-    });
-});
-taste.describe('Appends a div element to its target', () => {
-    taste.describe('target has one div element', () => {
-        const doc = taste.sample(`
-            <section id="foo"></section>
-        `);
-        const target = doc.getElementById('foo');
-        div(target);
-        taste.expect(target.getElementsByTagName('div').length).toBe(1);
-    });
-});
-```
-Testing asynchronous code is no problem
-```
-function asyncFn() {
-    window.setTimeout(() => {
-        taste.expect(1).toBe(1);
-    }, 6000);
+// Test these two functions
+function add(x,y) {
+    return x + y;
+}
+function appendDiv(target) {
+    const node = document.createElement('div');
+    target.appendChild(node);
 }
 
-taste.test('Resolves test in 6000ms', () => {
-    asyncFn(); // test resolves after timeout fn triggers
-    taste.timeout(7000); // Change test timeout to 7000ms to prevent the test from throwing before the timer triggers. Default timeout is 5000ms
-});
-```
-## Plans
-- Make compatible with Internet Explorer
-- Implement more resolution methods for expect
-- Implement before and after
-- Improve organization of the test view
+// Taste.flavor() creates a new context for testing
+Taste.flavor('Sample Test: add()')
+    .describe('Returns the sum of two numbers')
+    .test(() => {
+        // Taste.profile is an object meant for storing the results of a test
+        Taste.profile.addResult = add(4,1);
+    })
+    .expect('addResult').toEqual(5); // Pass the property used in Taste.profile into expect()
 
+// New context for a new test
+Taste.flavor('Sample Test: appendDiv()')
+    .describe('Appends a div element to the target')
+    // Creates a subtree in the DOM made specifically for this test
+    .sample(`
+        <section id="someSampleRoot">
+            <div>Just one div</div>
+        </section>
+    `) 
+    // Add an argument to the test function to reference the sample
+    .test((sample) => {
+        const root = sample.getElementById('someSampleRoot);
+        appendDiv(root);
+        Taste.profile.childrenLength = root.children.length;
+    })
+    .expect('childrenLength').toBe(2);
+```
+Asynchronous code is OK
+```
+Taste.flavor('Sample Test: Asynchronous Code')
+    .describe('Resolves after 3000ms')
+    .timeout(5000) // Adjust the timeout on the test to an appropriate duration (default = 2500)
+    .test(() => {
+        window.setTimeout(() => {
+            Taste.profile.asyncResult = true;
+        }, 3000);
+    })
+    .expect('asyncResult').toBeTruthy();
+
+```
 ## Version Log
 ---
+### v0.0.1
+- Refactored Taste to utilize chainable functions
+- Replaced Context class with Flavor class
+- Added @dweomercraft/events as a dependency

@@ -1,6 +1,6 @@
 {
   "name": "@jikurata/taste",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Lightweight testing framework for web browsers",
   "main": "index.js",
   "scripts": {
@@ -9,7 +9,8 @@
   },
   "keywords": [
     "test",
-    "browser"
+    "browser",
+    "es6"
   ],
   "author": "jikurata",
   "license": "ISC",

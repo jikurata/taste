@@ -112,7 +112,9 @@ class Expectation extends Emitter {
       }, 1);
       
       // Pass the sample HTML if available as an argument for the test
-      this.state.test(this.flavor.getElement('sampleAsHTML'));
+      const sample = this.flavor.getElement('sampleAsHTML');
+      sample.getElementById = (id) => { return sample.querySelector(`#${id}`); }
+      this.state.test(sample);
     })
     .then((value) => {
       const result = this.state.comparator(value);
