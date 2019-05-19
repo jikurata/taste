@@ -275,6 +275,7 @@ class Flavor extends Emitter {
       this.state.IS_COMPLETE = true;
     });
 
+    // Wait for window to finish loading before appending anything to the DOM
     if ( this.taste.isReady ) {
       this[appendToDOM]();
       this.update();
@@ -298,6 +299,7 @@ class Flavor extends Emitter {
       </header>
       <section data-flavor="content">
         <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
+        <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
         <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration">0</span>ms</p>
         <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout">2500</span>ms</p>
         <p class="taste-flavor-content">Description: <span class="taste-flavor-description" data-flavor="description"></span></p>
@@ -308,7 +310,6 @@ class Flavor extends Emitter {
         </section>
         <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
         <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect" data-flavor="expect"></span></p>
-        <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
       </section>
     `;
     node.innerHTML = html;
@@ -495,7 +496,6 @@ let instance = null;
 class Taste extends Emitter {
   constructor() {
     if ( instance ) return instance;
-
     super();
     instance = this;
     this.root = null;
