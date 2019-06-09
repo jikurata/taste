@@ -1,5 +1,11 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 'use strict';
+const Taste = require('./lib/Taste.js');
+
+module.exports = new Taste();
+
+},{"./lib/Taste.js":6}],2:[function(require,module,exports){
+'use strict';
 const Events = require('@dweomercraft/events');
 
 class Emitter {
@@ -21,7 +27,7 @@ class Emitter {
 
 module.exports = Emitter;
 
-},{"@dweomercraft/events":6}],2:[function(require,module,exports){
+},{"@dweomercraft/events":7}],3:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
@@ -29,6 +35,8 @@ const init = Symbol('init');
 const execute = Symbol('execute');
 const timeoutId = Symbol('timeoutId');
 const timeIncrementer = Symbol('timeIncrementer');
+
+const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 /**
  * An Expectation instance is created whenever a Flavor instance is created.
@@ -55,6 +63,8 @@ class Expectation extends Emitter {
     });
     Object.defineProperty(this, 'state', {
       value: new State({
+        expectStatement: '',
+        duration: 0,
         timeout: 2500,
         evaluator: null,
         comparator: null,
@@ -62,7 +72,8 @@ class Expectation extends Emitter {
         result: null,
         IS_READY: false,
         WINDOW_LOADED: false,
-        IS_COMPLETE: false
+        IS_COMPLETE: false,
+        IS_BROWSER: isBrowser
       }),
       enumerable: true,
       writable: false,
@@ -88,7 +99,10 @@ class Expectation extends Emitter {
       }
     });
     this.on('ready', () => this[execute]());
-    window.addEventListener('load', () => this.state.WINDOW_LOADED = true);
+    if ( this.isBrowser ) {
+      window.addEventListener('load', () => this.state.WINDOW_LOADED = true);
+    }
+    else this.state.WINDOW_LOADED = true;
   }
 
   /**
@@ -104,17 +118,21 @@ class Expectation extends Emitter {
 
       // Monitor flavor test duration
       const start = Date.now();
-      let duration = 0;
-      this[timeIncrementer] = window.setInterval(() => {
-        duration = Date.now() - start;
-        this.flavor.getElement('duration').textContent = duration;
-        if ( duration >= this.state.timeout ) reject(`Test timed out after ${duration} ms`);
+      this[timeIncrementer] = setInterval(() => {
+        this.state.duration = Date.now() - start;
+        if ( this.isBrowser ) {
+          this.flavor.getElement('duration').textContent = this.state.duration;
+        }
+        if ( this.state.duration >= this.state.timeout ) reject(`Test timed out after ${this.state.duration} ms`);
       }, 1);
       
       // Pass the sample HTML if available as an argument for the test
-      const sample = this.flavor.getElement('sampleAsHTML');
-      sample.getElementById = (id) => { return sample.querySelector(`#${id}`); }
-      this.state.test(sample);
+      if ( this.isBrowser ) {
+        const sample = this.flavor.getElement('sampleAsHTML');
+        sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+        this.state.test(sample);
+      }
+      else this.state.test(undefined);
     })
     .then((value) => {
       const result = this.state.comparator(value);
@@ -125,14 +143,17 @@ class Expectation extends Emitter {
       this.emit('error', err);
     })
     .finally(() => {
-      this.flavor.state.IS_COMPLETE = true;
-      window.clearInterval(this[timeIncrementer]);
+      this.state.IS_COMPLETE = true;
+      clearInterval(this[timeIncrementer]);
     });
   }
 
   update(expression) {
-    if ( !this.flavor.isReady ) return this.flavor.once('IS_READY', () => this.update(expression));
-    this.flavor.getElement('expect').textContent = `${expression}`;
+    if ( this.isBrowser ) {
+      if ( !this.flavor.isReady ) return this.flavor.once('IS_READY', () => this.update(expression));
+      this.flavor.getElement('expect').textContent = expression;
+    }
+    this.state.expectStatement = expression;
   }
 
   toBeLessThan(upperBound, closed = true) {
@@ -171,13 +192,13 @@ class Expectation extends Emitter {
   }
 
   toBeFalsy() {
-    this.state.comparator = (v) => { return !(v) };
+    this.state.comparator = (v) => { return !(v); };
     this.update(`${this.state.evaluator} to be a falsy value`);
     return this.flavor;
   }
 
   toBeTruthy() {
-    this.state.comparator = (v) => { return (v) };
+    this.state.comparator = (v) => { return (v); };
     this.update(`${this.state.evaluator} to be a truthy value`);
     return this.flavor;
   }
@@ -187,7 +208,7 @@ class Expectation extends Emitter {
    * @param {*} value 
    */
   toBe(value) {
-    this.state.comparator = (v) => { return v == value };
+    this.state.comparator = (v) => { return v == value; };
     this.update(`${this.state.evaluator} == ${value}`);
     return this.flavor;
   }
@@ -197,8 +218,34 @@ class Expectation extends Emitter {
    * @param {*} value 
    */
   toEqual(value) {
-    this.state.comparator = (v) => { return v === value };
+    this.state.comparator = (v) => { return v === value; };
     this.update(`${this.state.evaluator} === ${value}`);
+    return this.flavor;
+  }
+
+  toMatch(regex) {
+    this.state.comparator = (v) => { return v.match(regex); }
+    this.update(`${this.state.evaluator} matches ${regex}`);
+    return this.flavor;
+  }
+
+  /**
+   * Performs a typeof check on the value
+   * @param {String} type 
+   */
+  isTypeOf(type) {
+    this.state.comparator = (v) => { return typeof v === type }
+    this.update(`${this.state.evaluator} is a ${type}`);
+    return this.flavor;
+  }
+
+  /**
+   * Performs an instanceof check on the value
+   * @param {Any} prototype 
+   */
+  isInstanceOf(prototype) {
+    this.state.comparator = (v) => { return v instanceof prototype }
+    this.update(`${this.state.evaluator} is an instance of ${prototype}`);
     return this.flavor;
   }
 
@@ -210,26 +257,30 @@ class Expectation extends Emitter {
     if ( this.state.test ) return this.state.test.toString();
     return '';
   }
+
+  get isBrowser() {
+    return this.state.IS_BROWSER;
+  }
 }
 
 module.exports = Expectation;
 
-},{"./Emitter.js":1,"./State.js":4}],3:[function(require,module,exports){
+},{"./Emitter.js":2,"./State.js":5}],4:[function(require,module,exports){
+(function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const Expectation = require('./Expectation.js');
 const init = Symbol('init');
 const appendToDOM = Symbol('appendToDOM');
-const updateProgress = Symbol('updateProgress');
 const updateSample = Symbol('updateSample');
+
+const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 class Flavor extends Emitter {
   constructor(id, title, taste) {
     super();
     this.root = null;
-    this.title = title;
-    this.description = '';
     Object.defineProperty(this, 'taste', {
       value: taste,
       enumerable: true,
@@ -250,11 +301,16 @@ class Flavor extends Emitter {
     });
     Object.defineProperty(this, 'state', {
       value: new State({
+        title: title,
+        description: '',
+        status: '',
+        result: '',
         sample: null,
         IS_READY: false,
         IN_PROGRESS: false,
         IS_COMPLETE: false,
-        ERROR: false
+        ERROR: false,
+        IS_BROWSER: isBrowser
       }),
       enumerable: true,
       writable: false,
@@ -265,8 +321,8 @@ class Flavor extends Emitter {
 
   [init]() {
     this.state.on('change', (p, v) => {
-      this.emit(p, v);
       this.update();
+      this.emit(p, v);
     });
 
     this.expectation.on('complete', (result) => {
@@ -278,14 +334,31 @@ class Flavor extends Emitter {
     });
 
     // Wait for window to finish loading before appending anything to the DOM
-    if ( this.taste.isReady ) {
-      this[appendToDOM]();
-      this.update();
+    if ( this.isBrowser ) {
+      if ( this.taste.isReady ) {
+        this[appendToDOM]();
+        this.update();
+      }
+      else this.taste.once('ready', () => {
+        this[appendToDOM]();
+        this.update();
+      });
     }
-    else this.taste.once('ready', () => {
-      this[appendToDOM]();
-      this.update();
-    });
+    else {
+      this.on('IS_COMPLETE', (bool) => {
+        if ( bool ) {
+          let s = `${this.state.title}\n`;
+          s += `\tStatus: ${this.state.status}\n`;
+          s += `\tResult: ${this.state.result}\n`;
+          s += `\tDuration: ${this.expectation.state.duration}ms\n`;
+          s += `\tTimeout: ${this.expectation.state.timeout}ms\n`;
+          s += `\tTest: ${this.expectation.testToString()}\n`;
+          s += `\tExpects: ${this.expectation.state.expectStatement}\n`;
+          s += `\tReceived: ${this.expectation.state.evaluator} = ${this.taste.profile[this.expectation.state.evaluator]}\n`;
+          process.stdout.write(s + '\n');
+        }
+      });
+    }
   }
 
   /**
@@ -297,7 +370,7 @@ class Flavor extends Emitter {
     node.className = 'taste-flavor';
     const html = `
       <header>
-        <h2 class="taste-flavor-title" data-flavor="title">${this.title}</h2>
+        <h2 class="taste-flavor-title" data-flavor="title">${this.state.title}</h2>
       </header>
       <section data-flavor="content">
         <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
@@ -312,6 +385,7 @@ class Flavor extends Emitter {
         </section>
         <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
         <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect" data-flavor="expect"></span></p>
+        <p class="taste-flavor-content">Received: <span class="taste-flavor-received" data-flavor="received"></span></p>
       </section>
     `;
     node.innerHTML = html;
@@ -320,20 +394,16 @@ class Flavor extends Emitter {
     this.state.IS_READY = true;
   }
 
-  [updateProgress]() {
-    const status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
-    (this.isInProgress) ? 'In progress...' : 'Preparing...';
-    this.getElement('status').textContent = status;
-  }
-
   [updateSample]() {
-    const sampleAsHTML = this.getElement('sampleAsHTML');
-    const sampleAsText = this.getElement('sampleAsText');
-    const sampleRoot = sampleAsHTML.children[0];
-
-    // Only overwrite innerHTML of sampleAsHTML when there is no sample root
-    if ( !sampleRoot ) sampleAsHTML.innerHTML = this.state.sample;
-    else sampleAsText.textContent = sampleAsHTML.innerHTML;
+    if ( this.isBrowser ) {
+      const sampleAsHTML = this.getElement('sampleAsHTML');
+      const sampleAsText = this.getElement('sampleAsText');
+      const sampleRoot = sampleAsHTML.children[0];
+  
+      // Only overwrite innerHTML of sampleAsHTML when there is no sample root
+      if ( !sampleRoot ) sampleAsHTML.innerHTML = this.state.sample;
+      else sampleAsText.textContent = sampleAsHTML.innerHTML;
+    }
   }
 
   /**
@@ -341,14 +411,20 @@ class Flavor extends Emitter {
    */
   update() {
     if ( this.taste.isReady ) {
-      this[updateProgress]();
-      this.getElement('title').textContent = this.title;
-      this.getElement('timeout').textContent = this.expectation.state.timeout;
-      this.getElement('description').textContent = this.description;
-      this[updateSample]();
-      this.getElement('test').textContent = this.expectation.testToString();
-      this.getElement('result').textContent = (this.state.ERROR) ? this.state.ERROR : 
-        (this.isComplete) ? this.expectation.state.result : 'Pending...';
+      this.state.status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
+      (this.isInProgress) ? 'In progress...' : 'Preparing...';
+      this.state.result = (this.state.ERROR) ? this.state.ERROR : 
+      (this.isComplete) ? this.expectation.state.result : 'Pending...';
+      if ( this.isBrowser ) {
+        this.getElement('status').textContent = this.state.status;
+        this.getElement('title').textContent = this.state.title;
+        this.getElement('timeout').textContent = this.expectation.state.timeout;
+        this.getElement('description').textContent = this.state.description;
+        this[updateSample]();
+        this.getElement('test').textContent = this.expectation.testToString();
+        this.getElement('result').textContent = this.state.result;
+        this.getElement('received').textContent = (this.isComplete) ? `${this.expectation.state.evaluator} = ${this.taste.profile[this.expectation.state.evaluator]}` : '';
+      }
     }
   }
 
@@ -357,8 +433,10 @@ class Flavor extends Emitter {
    * @param {String} html
    */
   sample(html) {
-    this.state.sample = `${html}`;
-    this.update();
+    if ( this.isBrowser ) {
+      this.state.sample = `${html}`;
+      this.update();
+    }
     return this;
   }
 
@@ -367,7 +445,7 @@ class Flavor extends Emitter {
    * @param {String} s 
    */
   describe(s) {
-    this.description = s;
+    this.state.description = s;
     this.update();
     return this;
   }
@@ -400,7 +478,7 @@ class Flavor extends Emitter {
   }
 
   getElement(s) {
-    if ( this.root ) return this.root.querySelector(`[data-flavor="${s}"]`);
+    if ( this.isBrowser && this.root ) return this.root.querySelector(`[data-flavor="${s}"]`);
     return null;
   }
 
@@ -415,11 +493,16 @@ class Flavor extends Emitter {
   get isComplete() {
     return this.state.IS_COMPLETE;
   }
+
+  get isBrowser() {
+    return this.state.IS_BROWSER;
+  }
 }
 
 module.exports = Flavor;
 
-},{"./Emitter.js":1,"./Expectation.js":2,"./State.js":4}],4:[function(require,module,exports){
+}).call(this,require('_process'))
+},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":5,"_process":11}],5:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const map = Symbol('map');
@@ -483,7 +566,8 @@ class State extends Emitter {
 
 module.exports = State;
 
-},{"./Emitter.js":1}],5:[function(require,module,exports){
+},{"./Emitter.js":2}],6:[function(require,module,exports){
+(function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
@@ -493,6 +577,7 @@ const start = Symbol('start');
 const recordResults = Symbol('recordResults');
 const printResults = Symbol('printResults');
 
+const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 let instance = null;
 
 class Taste extends Emitter {
@@ -515,7 +600,8 @@ class Taste extends Emitter {
     });
     Object.defineProperty(this, 'state', {
       value: new State({
-        IS_READY: false
+        IS_READY: false,
+        IS_BROWSER: isBrowser
       }),
       enumerable: true,
       writable: false,
@@ -548,10 +634,13 @@ class Taste extends Emitter {
       }
     });
 
-    window.addEventListener('load', () => {
-      this.root = document.body;
-      this.state.IS_READY = true;
-    });
+    if ( this.isBrowser ) {
+      window.addEventListener('load', () => {
+        this.root = document.body;
+        this.state.IS_READY = true;
+      });
+    }
+    else this.state.IS_READY = true;
     this[start] = Date.now();
   }
 
@@ -561,8 +650,10 @@ class Taste extends Emitter {
    * @param {String} selector 
    */
   prepare(selector) {
-    if ( !this.isReady ) return this.once('ready', () => this.prepare(selector));
-    this.root = document.querySelector(selector);
+    if ( this.isBrowser ) {
+      if ( !this.isReady ) return this.once('ready', () => this.prepare(selector));
+      this.root = document.querySelector(selector);
+    }
   }
 
   /**
@@ -588,32 +679,47 @@ class Taste extends Emitter {
   }
 
   [printResults]() {
-    const node = document.createElement('section');
-    node.className = 'taste-summary';
-    node.innerHTML = `
-      <h2 class="taste-summary-title">Summary:</h2>
-      <p class="taste-summary-content">Number of tests: <span class="taste-summary-count" data-taste="testCount">${this.result.count}</span></p>
-      <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${this.result.pass}/${this.result.count}</span></p>
-      <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${this.result.fail}/${this.result.count}</span></p>
-      <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${this.result.error}/${this.result.count}</span></p>
-      <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${this.result.elapsedTime}ms</span></p>
-    `;
-    this.root.appendChild(node.cloneNode(true));
-    this.root.insertAdjacentElement('afterbegin', node.cloneNode(true));
+    if ( this.isBrowser ) {
+      const node = document.createElement('section');
+      node.className = 'taste-summary';
+      node.innerHTML = `
+        <h2 class="taste-summary-title">Summary:</h2>
+        <p class="taste-summary-content">Number of tests: <span class="taste-summary-count" data-taste="testCount">${this.result.count}</span></p>
+        <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${this.result.pass}/${this.result.count}</span></p>
+        <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${this.result.fail}/${this.result.count}</span></p>
+        <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${this.result.error}/${this.result.count}</span></p>
+        <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${this.result.elapsedTime}ms</span></p>
+      `;
+      this.root.appendChild(node.cloneNode(true));
+      this.root.insertAdjacentElement('afterbegin', node.cloneNode(true));
+    }
+    else {
+      let s = `Number of tests: ${this.result.count}\n`;
+      s += `Passed: ${this.result.pass}/${this.result.count}\n`;
+      s += `Failed: ${this.result.fail}/${this.result.count}\n`;
+      s += `Errors: ${this.result.error}/${this.result.count}\n`;
+      s += `Elapsed Time: ${this.result.elapsedTime}ms\n`;
+      process.stdout.write(s + '\n');
+    }
   }
 
   get isReady() {
     return this.state.IS_READY;
   }
+
+  get isBrowser() {
+    return this.state.IS_BROWSER;
+  }
 }
 
-module.exports = new Taste();
+module.exports = Taste;
 
-},{"./Emitter.js":1,"./Flavor.js":3,"./State.js":4}],6:[function(require,module,exports){
+}).call(this,require('_process'))
+},{"./Emitter.js":2,"./Flavor.js":4,"./State.js":5,"_process":11}],7:[function(require,module,exports){
 'use strict';
 module.exports = require('./lib/EventEmitter.js');
 
-},{"./lib/EventEmitter.js":8}],7:[function(require,module,exports){
+},{"./lib/EventEmitter.js":9}],8:[function(require,module,exports){
 'use strict';
 const EventHandler = require('./EventHandler.js');
 
@@ -689,7 +795,7 @@ class Event {
 
 module.exports = Event;
 
-},{"./EventHandler.js":9}],8:[function(require,module,exports){
+},{"./EventHandler.js":10}],9:[function(require,module,exports){
 'use strict';
 const Event = require('./Event.js');
 const instances = {};
@@ -844,7 +950,7 @@ class EventEmitter {
 
 module.exports = EventEmitter;
 
-},{"./Event.js":7}],9:[function(require,module,exports){
+},{"./Event.js":8}],10:[function(require,module,exports){
 'use strict';
 
 class EventHandler {
@@ -873,9 +979,196 @@ class EventHandler {
 
 module.exports = EventHandler;
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],12:[function(require,module,exports){
 'use strict';
-const Taste = require('../lib/Taste.js');
+const Taste = require('../index.js');
+const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 function add(x,y) {
   return x + y;
@@ -906,7 +1199,7 @@ Taste.flavor('Asynchronous pass test')
   .timeout(5000)
   .describe('Resolves after 3000ms')
   .test(() => {
-    window.setTimeout(() => {
+    setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
@@ -916,7 +1209,7 @@ Taste.flavor('Asynchronous fail test')
   .timeout(5000)
   .describe('Does not resolve after 3000ms')
   .test(() => {
-    window.setTimeout(() => {
+    setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
@@ -925,13 +1218,14 @@ Taste.flavor('Asynchronous fail test')
 Taste.flavor('Asynchronous timeout test')
   .describe('Test exceeds timeout')
   .test(() => {
-    window.setTimeout(() => {
+    setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
   .expect('asyncResult').toBeTruthy();
-
-Taste.flavor('Taste sample dom test')
+  
+if ( this.isBrowser ) {
+  Taste.flavor('Taste sample dom test')
   .describe('Test contains a sample of html to be used in the test')
   .sample(`
     <section class="sample">
@@ -944,4 +1238,6 @@ Taste.flavor('Taste sample dom test')
   })
   .expect('childrenLength').toBe(2);
 
-},{"../lib/Taste.js":5}]},{},[10]);
+}
+
+},{"../index.js":1}]},{},[12]);

@@ -1,5 +1,6 @@
 'use strict';
-const Taste = require('../lib/Taste.js');
+const Taste = require('../index.js');
+const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 function add(x,y) {
   return x + y;
@@ -30,7 +31,7 @@ Taste.flavor('Asynchronous pass test')
   .timeout(5000)
   .describe('Resolves after 3000ms')
   .test(() => {
-    window.setTimeout(() => {
+    setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
@@ -40,7 +41,7 @@ Taste.flavor('Asynchronous fail test')
   .timeout(5000)
   .describe('Does not resolve after 3000ms')
   .test(() => {
-    window.setTimeout(() => {
+    setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
@@ -49,13 +50,14 @@ Taste.flavor('Asynchronous fail test')
 Taste.flavor('Asynchronous timeout test')
   .describe('Test exceeds timeout')
   .test(() => {
-    window.setTimeout(() => {
+    setTimeout(() => {
       Taste.profile.asyncResult = true;
     }, 3000);
   })
   .expect('asyncResult').toBeTruthy();
-
-Taste.flavor('Taste sample dom test')
+  
+if ( this.isBrowser ) {
+  Taste.flavor('Taste sample dom test')
   .describe('Test contains a sample of html to be used in the test')
   .sample(`
     <section class="sample">
@@ -67,3 +69,5 @@ Taste.flavor('Taste sample dom test')
     Taste.profile.childrenLength = sample.children.length;
   })
   .expect('childrenLength').toBe(2);
+
+}

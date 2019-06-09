@@ -1,4 +1,4 @@
-# Taste v0.0.2
+# Taste v0.0.3
 Test client-side code directly in a web browser
 ---
 ## Install
@@ -60,6 +60,9 @@ Taste.flavor('Sample Test: Asynchronous Code')
 ```
 ## Version Log
 ---
+### v0.0.3
+- Detects whether to run the tests in a browser or Node.js environment
+
 ### v0.0.2
 - Fix index.js to properly export Taste
 - Add src/ to npmignore
