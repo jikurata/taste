@@ -1,4 +1,4 @@
-# Taste v0.0.4
+# Taste v0.0.5
 Test client-side code directly in a web browser
 ---
 ## Install
@@ -8,28 +8,41 @@ npm install @jikurata/taste
 ## Usage
 Taste utilizes chainable functions to produce simple, organized code structures
 ```
-const Taste = require('../lib/Taste.js');
-
-// Test these two functions
+    Taste.flavor('test title')
+        .describe('test description')
+        .test(() => {
+            Taste.profile.foo = 'bar';
+        })
+        .expect('foo').toMatch('bar');
+```
+## Example
+Testing two functions:
+```
 function add(x,y) {
     return x + y;
 }
+
 function appendDiv(target) {
     const node = document.createElement('div');
     target.appendChild(node);
 }
+```
+```
+const Taste = require('@jikurata/taste');
 
 // Taste.flavor() creates a new context for testing
-Taste.flavor('Sample Test: add()')
+Taste.flavor('add(x,y)')
     .describe('Returns the sum of two numbers')
     .test(() => {
         // Taste.profile is an object meant for storing the results of a test
         Taste.profile.addResult = add(4,1);
+        Taste.profile.addStrings = add('4',1);
     })
-    .expect('addResult').toEqual(5); // Pass the property used in Taste.profile into expect()
+    .expect('addResult').toEqual(5) // Pass the property used in Taste.profile into expect()
+    .expect('addStrings').toEqual(5); // Include as many expectations as needed for the test
 
 // New context for a new test
-Taste.flavor('Sample Test: appendDiv()')
+Taste.flavor('appendDiv()')
     .describe('Appends a div element to the target')
     // Creates a subtree in the DOM made specifically for this test
     .sample(`
@@ -43,11 +56,11 @@ Taste.flavor('Sample Test: appendDiv()')
         appendDiv(root);
         Taste.profile.childrenLength = root.children.length;
     })
-    .expect('childrenLength').toBe(2);
+    .expect('childrenLength').toEqual(2);
 ```
 Asynchronous code is OK
 ```
-Taste.flavor('Sample Test: Asynchronous Code')
+Taste.flavor('Asynchronous Code')
     .describe('Resolves after 3000ms')
     .timeout(5000) // Adjust the timeout on the test to an appropriate duration (default = 2500)
     .test(() => {
@@ -60,6 +73,10 @@ Taste.flavor('Sample Test: Asynchronous Code')
 ```
 ## Version Log
 ---
+### v0.0.5
+- Add navigation menu to summary
+- Flavors can now handle multiple Expectations
+
 ### v0.0.4
 - Add github repo link
 

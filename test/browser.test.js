@@ -528,7 +528,6 @@ class Flavor extends Emitter {
     const expect = new Expectation(this, arg);
     // When all expectations are complete, then the flavor's state is complete
     expect.on('complete', () => {
-      console.log('done', this.expectationsAreComplete());
       this.update();
       if ( this.expectationsAreComplete() ) {
         this.state.IS_COMPLETE = true;
