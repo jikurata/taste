@@ -360,26 +360,28 @@ class Flavor extends Emitter {
     node.setAttribute('data-flavor', this.id);
     node.className = 'taste-flavor';
     const html = `
-      <header>
-        <h2 class="taste-flavor-title" data-flavor="title">${this.state.title}</h2>
-      </header>
-      <section data-flavor="content">
-        <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
-        <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
-        <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration">0</span>ms</p>
-        <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout">2500</span>ms</p>
-        <p class="taste-flavor-content">Description: <span class="taste-flavor-description" data-flavor="description"></span></p>
-        <section>
-          <p>DOM:</p>
-          <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
-          <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
+      <a name="${this.id}">
+        <header>
+          <h2 class="taste-flavor-title" data-flavor="title">${this.state.title}</h2>
+        </header>
+        <section data-flavor="content">
+          <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
+          <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
+          <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration">0</span>ms</p>
+          <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout">2500</span>ms</p>
+          <p class="taste-flavor-content">Description: <span class="taste-flavor-description" data-flavor="description"></span></p>
+          <section>
+            <p>DOM:</p>
+            <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
+            <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
+          </section>
+          <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
+          <div class="taste-flavor-content">
+            Expectations:
+            <section class="taste-flavor-expectation" data-flavor="expectation"></section>
+          </div>
         </section>
-        <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
-        <div class="taste-flavor-content">
-          Expectations:
-          <section class="taste-flavor-expectation" data-flavor="expectation"></section>
-        </div>
-      </section>
+      </a>
     `;
     node.innerHTML = html;
     this.taste.root.appendChild(node);
@@ -436,7 +438,9 @@ class Flavor extends Emitter {
             results.push(expect.result);
             received = `${expect.evaluator} = ${this.taste.profile[expect.evaluator]}`;
           }
-          else results.push('Pending');
+          else if ( this.state.ERROR ) {
+            results.push(this.state.ERROR);
+          }
           const html = `
           <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.expression}</span></p>
           <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${received}</span></p>`;
@@ -570,6 +574,10 @@ class Flavor extends Emitter {
 
   get root() {
     return this.state.root;
+  }
+
+  get title() {
+    return this.state.title;
   }
 
   get isReady() {
@@ -776,6 +784,21 @@ class Taste extends Emitter {
 
   [printResults]() {
     if ( this.isBrowser ) {
+      const nav = document.createElement('nav');
+      nav.className = 'taste-navigation';
+      let passed = [];
+      let failed = [];
+      let error = [];
+      const ids = Object.keys(this.flavors);
+      for ( let i = 0; i < ids.length; ++i ) {
+        const flavor = this.flavors[ids[i]];
+        flavor.forEachExpectation((except) => {
+          let a = error;
+          if ( except.result === 'Passed' ) a = passed;
+          else if ( except.result === 'Failed' ) a = failed;
+          a.push(`<a class="taste-navigation-link" href="#${flavor.id}">${a.length + 1}. ${flavor.title}</a><br>`);
+        });
+      }
       const node = document.createElement('section');
       node.className = 'taste-summary';
       node.innerHTML = `
@@ -783,8 +806,11 @@ class Taste extends Emitter {
         <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${this.result.flavorCount}</span></p>
         <p class="taste-summary-content">Number of Expectations: <span class="taste-summary-count" data-taste="expectCount">${this.result.expectCount}</span></p>
         <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${this.result.pass}/${this.result.expectCount}</span></p>
+        ${passed.join('')}
         <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${this.result.fail}/${this.result.expectCount}</span></p>
+        ${failed.join('')}
         <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${this.result.error}/${this.result.expectCount}</span></p>
+        ${error.join('')}
         <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${this.result.elapsedTime}ms</span></p>
       `;
       this.root.appendChild(node.cloneNode(true));
@@ -1376,7 +1402,7 @@ Taste.flavor('Asynchronous pass test')
 
 Taste.flavor('Asynchronous fail test')
   .timeout(5000)
-  .describe('Does not resolve after 3000ms')
+  .describe('Fails after 3000ms')
   .test(() => {
     setTimeout(() => {
       Taste.profile.asyncResult = true;
@@ -1393,7 +1419,7 @@ Taste.flavor('Asynchronous timeout test')
   })
   .expect('asyncResult').toBeTruthy();
   
-if ( this.isBrowser ) {
+if ( Taste.isBrowser ) {
   Taste.flavor('Taste sample dom test')
   .describe('Test contains a sample of html to be used in the test')
   .sample(`

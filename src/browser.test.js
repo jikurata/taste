@@ -40,7 +40,7 @@ Taste.flavor('Asynchronous pass test')
 
 Taste.flavor('Asynchronous fail test')
   .timeout(5000)
-  .describe('Does not resolve after 3000ms')
+  .describe('Fails after 3000ms')
   .test(() => {
     setTimeout(() => {
       Taste.profile.asyncResult = true;
@@ -57,7 +57,7 @@ Taste.flavor('Asynchronous timeout test')
   })
   .expect('asyncResult').toBeTruthy();
   
-if ( this.isBrowser ) {
+if ( Taste.isBrowser ) {
   Taste.flavor('Taste sample dom test')
   .describe('Test contains a sample of html to be used in the test')
   .sample(`
