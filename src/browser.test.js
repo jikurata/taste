@@ -19,7 +19,7 @@ Taste.flavor('Synchronous pass test')
     Taste.profile.addResultAgain = add(6,4);
   })
   .expect('addResult').toEqual(5)
-  .expect('addResultAgain').toEqual('10');
+  .expect('addResultAgain').toEqual(10);
 
 Taste.flavor('Synchronous fail test')
   .describe('Add 4 + 1')

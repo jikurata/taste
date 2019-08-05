@@ -123,11 +123,6 @@ class Expectation extends Emitter {
   }
 
   update(expression) {
-    if ( this.isBrowser ) {
-      // If the flavor state has not reached ready yet, listen to it until it is
-      if ( !this.flavor.isReady ) return this.flavor.once('IS_READY', () => this.update(expression));
-      this.flavor.getElement('expect').textContent = expression;
-    }
     this.state.expectStatement = expression;
   }
 
@@ -138,7 +133,7 @@ class Expectation extends Emitter {
       else inRange = v < upperBound;
       return inRange;
     };
-    this.update(`${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`);
+    this.state.expectStatement = `${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`;
     return this.flavor;
   }
 
@@ -149,7 +144,7 @@ class Expectation extends Emitter {
       else inRange = v > lowerBound;
       return inRange;
     };
-    this.update(`${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator}`);
+    this.state.expectStatement = `${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator}`;
     return this.flavor;
   }
 
@@ -162,19 +157,19 @@ class Expectation extends Emitter {
       else inRange = v < upperBound;
       return inRange;
     };
-    this.update(`${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`);
+    this.state.expectStatement = `${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`;
     return this.flavor;
   }
 
   toBeFalsy() {
     this.state.comparator = (v) => { return !(v); };
-    this.update(`${this.state.evaluator} to be a falsy value`);
+    this.state.expectStatement = `${this.state.evaluator} to be a falsy value`;
     return this.flavor;
   }
 
   toBeTruthy() {
     this.state.comparator = (v) => { return (v); };
-    this.update(`${this.state.evaluator} to be a truthy value`);
+    this.state.expectStatement = `${this.state.evaluator} to be a truthy value`;
     return this.flavor;
   }
 
@@ -184,7 +179,7 @@ class Expectation extends Emitter {
    */
   toBe(value) {
     this.state.comparator = (v) => { return v == value; };
-    this.update(`${this.state.evaluator} == ${value}`);
+    this.state.expectStatement = `${this.state.evaluator} == ${value}`;
     return this.flavor;
   }
 
@@ -194,13 +189,13 @@ class Expectation extends Emitter {
    */
   toEqual(value) {
     this.state.comparator = (v) => { return v === value; };
-    this.update(`${this.state.evaluator} === ${value}`);
+    this.state.expectStatement = `${this.state.evaluator} === ${value}`;
     return this.flavor;
   }
 
   toMatch(regex) {
     this.state.comparator = (v) => { return v.match(regex); }
-    this.update(`${this.state.evaluator} matches ${regex}`);
+    this.state.expectStatement = `${this.state.evaluator} matches ${regex}`;
     return this.flavor;
   }
 
@@ -210,7 +205,7 @@ class Expectation extends Emitter {
    */
   isTypeOf(type) {
     this.state.comparator = (v) => { return typeof v === type }
-    this.update(`${this.state.evaluator} is a ${type}`);
+    this.state.expectStatement = `${this.state.evaluator} is a ${type}`;
     return this.flavor;
   }
 
@@ -220,7 +215,7 @@ class Expectation extends Emitter {
    */
   isInstanceOf(prototype) {
     this.state.comparator = (v) => { return v instanceof prototype }
-    this.update(`${this.state.evaluator} is an instance of ${prototype}`);
+    this.state.expectStatement = `${this.state.evaluator} is an instance of ${prototype}`;
     return this.flavor;
   }
 
@@ -380,8 +375,10 @@ class Flavor extends Emitter {
           <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
         </section>
         <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
-        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect" data-flavor="expect"></span></p>
-        <p class="taste-flavor-content">Received: <span class="taste-flavor-received" data-flavor="received"></span></p>
+        <div class="taste-flavor-content">
+          Expectations:
+          <section class="taste-flavor-expectation" data-flavor="expectation"></section>
+        </div>
       </section>
     `;
     node.innerHTML = html;
@@ -431,20 +428,21 @@ class Flavor extends Emitter {
         this.getElement('description').textContent = this.state.description;
         this[updateSample]();
         this.getElement('test').textContent = this.testToString();
-        const expects = [];
         const results = [];
-        const received = [];
+        this.getElement('expectation').innerHTML = '';
         this.forEachExpectation((expect) => {
-          expects.push(expect.expression);
-          results.push(expect.result);
+          let received = '';
           if ( expect.isComplete ) {
-            const s = `${expect.evaluator} = ${this.taste.profile[expect.evaluator]}`
-            received.push(s)
+            results.push(expect.result);
+            received = `${expect.evaluator} = ${this.taste.profile[expect.evaluator]}`;
           }
+          else results.push('Pending');
+          const html = `
+          <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.expression}</span></p>
+          <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${received}</span></p>`;
+          this.getElement('expectation').innerHTML += html;
         });
-        this.getElement('expect').textContent = expects.join('\n');
         this.getElement('result').textContent = results.join(' ');
-        this.getElement('received').textContent = received.join('\n');
       }
     }
   }
@@ -1357,7 +1355,7 @@ Taste.flavor('Synchronous pass test')
     Taste.profile.addResultAgain = add(6,4);
   })
   .expect('addResult').toEqual(5)
-  .expect('addResultAgain').toEqual('10');
+  .expect('addResultAgain').toEqual(10);
 
 Taste.flavor('Synchronous fail test')
   .describe('Add 4 + 1')
