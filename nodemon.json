@@ -1,0 +1,14 @@
+{
+  "script": "index.js",
+  "restartable": "rs",
+  "ignore": [
+    ".git",
+    "node_modules/**/node_modules"
+  ],
+  "watch": [
+    "src/**/*.*",
+    "lib/**/*.*"
+  ],
+  "verbose": true,
+  "delay": "500"
+}

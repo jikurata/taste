@@ -1,6 +1,5 @@
 'use strict';
 const Taste = require('../index.js');
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 function add(x,y) {
   return x + y;
@@ -17,8 +16,10 @@ Taste.flavor('Synchronous pass test')
   .describe('Add 4 + 1')
   .test(() => {
     Taste.profile.addResult = add(4,1);
+    Taste.profile.addResultAgain = add(6,4);
   })
-  .expect('addResult').toEqual(5);
+  .expect('addResult').toEqual(5)
+  .expect('addResultAgain').toEqual('10');
 
 Taste.flavor('Synchronous fail test')
   .describe('Add 4 + 1')

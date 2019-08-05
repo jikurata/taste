@@ -21,6 +21,6 @@
     "nodemon": "^1.19.0"
   },
   "dependencies": {
-    "@dweomercraft/events": "^2.4.2"
+    "@jikurata/events": "^2.5.2"
   }
 }

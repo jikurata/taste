@@ -6,7 +6,7 @@ module.exports = new Taste();
 
 },{"./lib/Taste.js":6}],2:[function(require,module,exports){
 'use strict';
-const Events = require('@dweomercraft/events');
+const Events = require('@jikurata/events');
 
 class Emitter {
   constructor(config = {enumerable: false}) {
@@ -20,21 +20,21 @@ class Emitter {
 
   emit(e, ...args) {this.events.emit(e, ...args);}
 
-  on(e, f) {this.events.on(e,f);}
+  on(e, f, options = {}) {this.events.addEventListener(e,f, options);}
 
-  once(e, f) {this.events.once(e, f);}
+  once(e, f, options = {}) {
+    options.once = true;
+    this.events.addEventListener(e, f, options);
+  }
 }
 
 module.exports = Emitter;
 
-},{"@dweomercraft/events":7}],3:[function(require,module,exports){
+},{"@jikurata/events":7}],3:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const init = Symbol('init');
-const execute = Symbol('execute');
-const timeoutId = Symbol('timeoutId');
-const timeIncrementer = Symbol('timeIncrementer');
 
 const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
@@ -49,12 +49,15 @@ const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'u
  * ready: Emits when all parameters for a test are defined
  * start: Emits when the test is executed
  * complete: Emits when the test is evaluated and results have been recorded
- * error: Emits when an error occurs in the test process
  */
 class Expectation extends Emitter {
-  constructor(flavor) {
+  constructor(flavor, evaluator) {
+    if ( !evaluator || typeof evaluator !== 'string' ) {
+      this.state.result = new Error(`Expected a string as an argument, but instead received ${typeof evaluator}`);
+      this.state.IS_COMPLETE = true;
+      return null;
+    }
     super();
-    this[timeoutId] = null;
     Object.defineProperty(this, 'flavor', {
       value: flavor,
       enumerable: true,
@@ -63,17 +66,14 @@ class Expectation extends Emitter {
     });
     Object.defineProperty(this, 'state', {
       value: new State({
-        expectStatement: '',
-        duration: 0,
-        timeout: 2500,
-        evaluator: null,
-        comparator: null,
-        test: null,
-        result: null,
-        IS_READY: false,
-        WINDOW_LOADED: false,
-        IS_COMPLETE: false,
-        IS_BROWSER: isBrowser
+        'expectStatement': '',
+        'evaluator': evaluator,
+        'comparator': null,
+        'result': null,
+        'IS_READY': false,
+        'IS_COMPLETE': false,
+        'WINDOW_LOADED': false,
+        'IS_BROWSER': isBrowser
       }),
       enumerable: true,
       writable: false,
@@ -86,70 +86,45 @@ class Expectation extends Emitter {
     this.events.register('ready');
     this.events.register('start');
     this.events.register('complete');
-    this.events.register('error');
     
     this.state.on('change', (p, v) => {
       if ( !this.state.IS_READY &&
             this.state.WINDOW_LOADED &&
             this.state.evaluator && 
-            this.state.comparator && 
-            this.state.test ) {
+            this.state.comparator) {
         this.state.set('IS_READY', true, false);
         this.emit('ready');
       }
     });
-    this.on('ready', () => this[execute]());
+
+    // When the taste profile emits a value for the evaluator pass the value to the comparator
+    this.flavor.taste.profile.once(this.evaluator, (v) => {
+      if ( this.isReady ) {
+        if ( this.flavor.isComplete ) return;
+        const result = this.state.comparator(v);
+        this.state.result = (result) ? 'Passed' : 'Failed';
+        this.state.IS_COMPLETE = true;
+        this.emit('complete', result);
+      }
+      else {
+        this.once('ready', () => {
+          if ( this.flavor.isComplete ) return;
+          const result = this.state.comparator(v);
+          this.state.result = (result) ? 'Passed' : 'Failed';
+          this.state.IS_COMPLETE = true;
+          this.emit('complete', result);
+        });
+      }
+    });
     if ( this.isBrowser ) {
       window.addEventListener('load', () => this.state.WINDOW_LOADED = true);
     }
     else this.state.WINDOW_LOADED = true;
   }
 
-  /**
-   * Calls once the evaluator, comparator and test are defined
-   */
-  [execute]() {
-    return new Promise((resolve, reject) => {
-      this.emit('start');
-      if ( typeof this.state.test !== 'function' ) return reject('Test handler is not a function');
-
-      this.flavor.taste.once(this.state.evaluator, (v) => resolve(v));
-      this.flavor.state.IN_PROGRESS = true;
-
-      // Monitor flavor test duration
-      const start = Date.now();
-      this[timeIncrementer] = setInterval(() => {
-        this.state.duration = Date.now() - start;
-        if ( this.isBrowser ) {
-          this.flavor.getElement('duration').textContent = this.state.duration;
-        }
-        if ( this.state.duration >= this.state.timeout ) reject(`Test timed out after ${this.state.duration} ms`);
-      }, 1);
-      
-      // Pass the sample HTML if available as an argument for the test
-      if ( this.isBrowser ) {
-        const sample = this.flavor.getElement('sampleAsHTML');
-        sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
-        this.state.test(sample);
-      }
-      else this.state.test(undefined);
-    })
-    .then((value) => {
-      const result = this.state.comparator(value);
-      this.state.result = (result) ? 'Passed' : 'Failed';
-      this.emit('complete', result);
-    })
-    .catch(err => {
-      this.emit('error', err);
-    })
-    .finally(() => {
-      this.state.IS_COMPLETE = true;
-      clearInterval(this[timeIncrementer]);
-    });
-  }
-
   update(expression) {
     if ( this.isBrowser ) {
+      // If the flavor state has not reached ready yet, listen to it until it is
       if ( !this.flavor.isReady ) return this.flavor.once('IS_READY', () => this.update(expression));
       this.flavor.getElement('expect').textContent = expression;
     }
@@ -249,17 +224,28 @@ class Expectation extends Emitter {
     return this.flavor;
   }
 
-  assign(test) {
-    this.state.test = test;
+  get evaluator() {
+    return this.state.evaluator;
   }
 
-  testToString() {
-    if ( this.state.test ) return this.state.test.toString();
-    return '';
+  get expression() {
+    return this.state.expectStatement;
+  }
+
+  get result() {
+    return this.state.result;
   }
 
   get isBrowser() {
     return this.state.IS_BROWSER;
+  }
+
+  get isReady() {
+    return this.state.IS_READY;
+  }
+
+  get isComplete() {
+    return this.state.IS_COMPLETE;
   }
 }
 
@@ -269,18 +255,19 @@ module.exports = Expectation;
 (function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
-const State = require('./State.js');
 const Expectation = require('./Expectation.js');
+const State = require('./State.js');
 const init = Symbol('init');
 const appendToDOM = Symbol('appendToDOM');
 const updateSample = Symbol('updateSample');
+const timeoutId = Symbol('timeoutId');
+const timeIncrementer = Symbol('timeIncrementer');
 
 const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 class Flavor extends Emitter {
   constructor(id, title, taste) {
     super();
-    this.root = null;
     Object.defineProperty(this, 'taste', {
       value: taste,
       enumerable: true,
@@ -293,44 +280,52 @@ class Flavor extends Emitter {
       writable: false,
       configurable: false
     });
-    Object.defineProperty(this, 'expectation', {
-      value: new Expectation(this),
+    Object.defineProperty(this, 'expectations', {
+      value: [],
       enumerable: true,
       writable: false,
       configurable: false
     });
     Object.defineProperty(this, 'state', {
       value: new State({
-        title: title,
-        description: '',
-        status: '',
-        result: '',
-        sample: null,
-        IS_READY: false,
-        IN_PROGRESS: false,
-        IS_COMPLETE: false,
-        ERROR: false,
-        IS_BROWSER: isBrowser
+        'title': title,
+        'description': '',
+        'status': '',
+        'result': '',
+        'sample': null,
+        'test': null,
+        'root': null,
+        'timeout': 2500,
+        'duration': 0,
+        'IS_READY': false,
+        'IN_PROGRESS': false,
+        'IS_COMPLETE': false,
+        'ERROR': false,
+        'IS_BROWSER': isBrowser
       }),
       enumerable: true,
       writable: false,
       configurable: false
     });
+    this[timeoutId] = null;
     this[init]();
   }
 
   [init]() {
     this.state.on('change', (p, v) => {
       this.update();
+      switch(p) {
+        case 'IS_COMPLETE':
+          if ( v ) this.emit('complete');
+          break;
+      }
       this.emit(p, v);
     });
-
-    this.expectation.on('complete', (result) => {
-      this.state.IS_COMPLETE = true;
-    });
-    this.expectation.on('error', (err) => {
-      this.state.ERROR = err;
-      this.state.IS_COMPLETE = true;
+    // Stop the timer once the flavor test is complete
+    this.on('complete', () => {
+      if ( this[timeIncrementer] ) {
+        clearInterval(this[timeIncrementer]);
+      }
     });
 
     // Wait for window to finish loading before appending anything to the DOM
@@ -345,18 +340,19 @@ class Flavor extends Emitter {
       });
     }
     else {
-      this.on('IS_COMPLETE', (bool) => {
-        if ( bool ) {
-          let s = `${this.state.title}\n`;
-          s += `\tStatus: ${this.state.status}\n`;
-          s += `\tResult: ${this.state.result}\n`;
-          s += `\tDuration: ${this.expectation.state.duration}ms\n`;
-          s += `\tTimeout: ${this.expectation.state.timeout}ms\n`;
-          s += `\tTest: ${this.expectation.testToString()}\n`;
-          s += `\tExpects: ${this.expectation.state.expectStatement}\n`;
-          s += `\tReceived: ${this.expectation.state.evaluator} = ${this.taste.profile[this.expectation.state.evaluator]}\n`;
-          process.stdout.write(s + '\n');
-        }
+      this.once('IS_COMPLETE', () => {
+        // TODO: Refactor to handle multiple expectations
+        let s = `${this.state.title}\n`;
+        s += `\tStatus: ${this.state.status}\n`;
+        s += `\tResult: ${this.state.result}\n`;
+        s += `\tDuration: ${this.state.duration}ms\n`;
+        s += `\tTimeout: ${this.state.timeout}ms\n`;
+        s += `\tTest: ${this.testToString()}\n`;
+        this.forEachExpectation((expect) => {
+          s += `\tExpects: ${expect.expression}\n`;
+          s += `\tReceived: ${expect.evalauator} = ${this.taste.profile[expect.evalauator]}\n`;
+        });
+        process.stdout.write(s + '\n');
       });
     }
   }
@@ -390,7 +386,7 @@ class Flavor extends Emitter {
     `;
     node.innerHTML = html;
     this.taste.root.appendChild(node);
-    this.root = node;
+    this.state.root = node;
     this.state.IS_READY = true;
   }
 
@@ -413,17 +409,42 @@ class Flavor extends Emitter {
     if ( this.taste.isReady ) {
       this.state.status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
       (this.isInProgress) ? 'In progress...' : 'Preparing...';
-      this.state.result = (this.state.ERROR) ? this.state.ERROR : 
-      (this.isComplete) ? this.expectation.state.result : 'Pending...';
+      
+      if ( this.state.ERROR ) {
+        this.state.result = this.state.ERROR;
+      }
+      else if ( this.isComplete ) {
+        const results = [];
+        this.forEachExpectation((expect) => {
+          results.push(expect.state.result);
+        });
+        this.state.result = results.join(' ');
+      }
+      else {
+        this.state.result = 'Pending...';
+      }
+      
       if ( this.isBrowser ) {
         this.getElement('status').textContent = this.state.status;
         this.getElement('title').textContent = this.state.title;
-        this.getElement('timeout').textContent = this.expectation.state.timeout;
+        this.getElement('timeout').textContent = this.state.timeout;
         this.getElement('description').textContent = this.state.description;
         this[updateSample]();
-        this.getElement('test').textContent = this.expectation.testToString();
-        this.getElement('result').textContent = this.state.result;
-        this.getElement('received').textContent = (this.isComplete) ? `${this.expectation.state.evaluator} = ${this.taste.profile[this.expectation.state.evaluator]}` : '';
+        this.getElement('test').textContent = this.testToString();
+        const expects = [];
+        const results = [];
+        const received = [];
+        this.forEachExpectation((expect) => {
+          expects.push(expect.expression);
+          results.push(expect.result);
+          if ( expect.isComplete ) {
+            const s = `${expect.evaluator} = ${this.taste.profile[expect.evaluator]}`
+            received.push(s)
+          }
+        });
+        this.getElement('expect').textContent = expects.join('\n');
+        this.getElement('result').textContent = results.join(' ');
+        this.getElement('received').textContent = received.join('\n');
       }
     }
   }
@@ -454,7 +475,44 @@ class Flavor extends Emitter {
    * Performs the defined test 
    */
   test(handler) {
-    this.expectation.assign(handler);
+      if ( typeof handler !== 'function' ) {
+        this.state.ERROR = new Errror('Test handler is not a function');
+        return this;
+      }
+
+      this.emit('start');
+      this.state.test = handler;
+      this.state.IN_PROGRESS = true;
+
+      // Monitor flavor test duration
+      const start = Date.now();
+      this[timeIncrementer] = setInterval(() => {
+        this.state.duration = Date.now() - start;
+        if ( this.isBrowser ) {
+          this.getElement('duration').textContent = this.state.duration;
+        }
+        if ( this.state.duration >= this.state.timeout ) {
+          this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
+          this.state.IS_COMPLETE = true;
+          return this;
+        }
+      }, 1);
+      
+      // Pass the sample HTML if available as an argument for the test and execute the test
+      if ( this.isBrowser ) {
+        // Check if Taste is ready to run tests before executing the test
+        if ( this.taste.isReady ) {
+          const sample = this.getElement('sampleAsHTML');
+          if ( !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+          handler(sample);
+        }
+        else this.taste.once('ready', () => {
+          const sample = this.getElement('sampleAsHTML');
+          if ( !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+          handler(sample);
+        });
+      }
+      else handler(undefined);
     this.update();
     return this;
   }
@@ -465,14 +523,23 @@ class Flavor extends Emitter {
    * @param {String} arg
    */
   expect(arg) {
-    this.expectation.state.evaluator = arg;
-    this.taste.profile.set(arg, null);
+    const expect = new Expectation(this, arg);
+    // When all expectations are complete, then the flavor's state is complete
+    expect.on('complete', () => {
+      console.log('done', this.expectationsAreComplete());
+      this.update();
+      if ( this.expectationsAreComplete() ) {
+        this.state.IS_COMPLETE = true;
+      }
+    });
+    this.taste.profile.set(arg, null, false);
+    this.expectations.push(expect);
     this.update();
-    return this.expectation;
+    return expect;
   }
 
   timeout(t) {
-    this.expectation.state.timeout = t;
+    this.state.timeout = t;
     this.update();
     return this;
   }
@@ -480,6 +547,31 @@ class Flavor extends Emitter {
   getElement(s) {
     if ( this.isBrowser && this.root ) return this.root.querySelector(`[data-flavor="${s}"]`);
     return null;
+  }
+
+  expectationsAreComplete() {
+    for ( let i = 0; i < this.expectations.length; ++i ) {
+      const expect = this.expectations[i];
+      if ( !expect.isComplete ) return false;
+    }
+    return true;
+  }
+
+  forEachExpectation(fn) {
+    if ( typeof fn !== 'function' ) throw new Error(`Expected a function as an argument, but instead received a type ${typeof fn}`);
+    for ( let i = 0; i < this.expectations.length; ++i ) {
+      const expect = this.expectations[i];
+      fn(expect);
+    }
+  }
+
+  testToString() {
+    if ( this.state.test ) return this.state.test.toString();
+    return '';
+  }
+
+  get root() {
+    return this.state.root;
   }
 
   get isReady() {
@@ -585,7 +677,6 @@ class Taste extends Emitter {
     if ( instance ) return instance;
     super();
     instance = this;
-    this.root = null;
     Object.defineProperty(this, 'flavors', {
       value: {},
       enumerable: true,
@@ -600,8 +691,9 @@ class Taste extends Emitter {
     });
     Object.defineProperty(this, 'state', {
       value: new State({
-        IS_READY: false,
-        IS_BROWSER: isBrowser
+        'root': null,
+        'IS_READY': false,
+        'IS_BROWSER': isBrowser
       }),
       enumerable: true,
       writable: false,
@@ -609,7 +701,8 @@ class Taste extends Emitter {
     });
     Object.defineProperty(this, 'result', {
       value: {
-        'count': 0,
+        'flavorCount': 0,
+        'expectCount': 0,
         'pass': 0,
         'fail': 0,
         'error': 0,
@@ -624,7 +717,7 @@ class Taste extends Emitter {
   }
 
   [init]() {
-    this.profile.on('change', (p, v) => this.emit(p, v));
+    this.profile.on('change', (p, v) => this.profile.emit(p, v));
     this.state.on('change', (p, v) => {
       if ( v ) {
         switch(p) {
@@ -636,7 +729,7 @@ class Taste extends Emitter {
 
     if ( this.isBrowser ) {
       window.addEventListener('load', () => {
-        this.root = document.body;
+        this.state.root = document.body;
         this.state.IS_READY = true;
       });
     }
@@ -652,7 +745,7 @@ class Taste extends Emitter {
   prepare(selector) {
     if ( this.isBrowser ) {
       if ( !this.isReady ) return this.once('ready', () => this.prepare(selector));
-      this.root = document.querySelector(selector);
+      this.state.root = document.querySelector(selector);
     }
   }
 
@@ -662,17 +755,22 @@ class Taste extends Emitter {
   flavor(title) {
     const id = `flavor${Object.keys(this.flavors).length}`;
     const flavor = new Flavor(id, title, this);
-    flavor.once('IS_COMPLETE', () => this[recordResults](flavor));
+    flavor.on('complete', () => {
+      this[recordResults](flavor);
+    });
     this.flavors[id] = flavor;
     return flavor;
   }
 
   [recordResults](flavor) {
-    this.result.count++;
-    if ( flavor.expectation.state.result === 'Passed' ) this.result.pass++;
-    else if ( flavor.expectation.state.result === 'Failed' ) this.result.fail++;
-    else this.result.error++;
-    if ( this.result.count === Object.keys(this.flavors).length ) {
+    this.result.flavorCount++;
+    flavor.forEachExpectation((expect) => {
+      this.result.expectCount++;
+      if ( expect.state.result === 'Passed' ) this.result.pass++;
+      else if ( expect.state.result === 'Failed' ) this.result.fail++;
+      else this.result.error++;
+    });
+    if ( this.result.flavorCount === Object.keys(this.flavors).length ) {
       this.result.elapsedTime = Date.now() - this[start];
       this[printResults]();
     }
@@ -684,10 +782,11 @@ class Taste extends Emitter {
       node.className = 'taste-summary';
       node.innerHTML = `
         <h2 class="taste-summary-title">Summary:</h2>
-        <p class="taste-summary-content">Number of tests: <span class="taste-summary-count" data-taste="testCount">${this.result.count}</span></p>
-        <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${this.result.pass}/${this.result.count}</span></p>
-        <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${this.result.fail}/${this.result.count}</span></p>
-        <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${this.result.error}/${this.result.count}</span></p>
+        <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${this.result.flavorCount}</span></p>
+        <p class="taste-summary-content">Number of Expectations: <span class="taste-summary-count" data-taste="expectCount">${this.result.expectCount}</span></p>
+        <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${this.result.pass}/${this.result.expectCount}</span></p>
+        <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${this.result.fail}/${this.result.expectCount}</span></p>
+        <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${this.result.error}/${this.result.expectCount}</span></p>
         <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${this.result.elapsedTime}ms</span></p>
       `;
       this.root.appendChild(node.cloneNode(true));
@@ -701,6 +800,10 @@ class Taste extends Emitter {
       s += `Elapsed Time: ${this.result.elapsedTime}ms\n`;
       process.stdout.write(s + '\n');
     }
+  }
+
+  get root() {
+    return this.state.root;
   }
 
   get isReady() {
@@ -721,90 +824,136 @@ module.exports = require('./lib/EventEmitter.js');
 
 },{"./lib/EventEmitter.js":9}],8:[function(require,module,exports){
 'use strict';
-const EventHandler = require('./EventHandler.js');
+const EventListener = require('./EventListener.js');
 
 class Event {
-  constructor(name) {
-    this._name = name;
-    this._handlers = [];
-    this._isActive = true;
+  constructor(name, param = {}) {
+    Object.defineProperty(this, 'name', {
+      value: name,
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(this, 'listeners', {
+      value: [],
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    this._PREVIOUS_ARGS = [];
+    this._MAX_POOL_SIZE = (param.hasOwnProperty('limit')) ? param.limit : null;
+    this._IS_PERSISTED = (param.hasOwnProperty('persist')) ? param.persist : false;
+    this._IS_SUBSCRIBED = (param.hasOwnProperty('subscribe')) ? param.subscribe : true;
   }
 
-  runHandlers(...args) {
-    if ( !this.isActive ) return;
+  runListeners(...args) {
+    if ( !this.isSubscribed ) return;
     const temp = [];
-    for ( let i = 0; i < this.handlers.length; ++i ) {
-      this.handlers[i].run(...args);
-      if ( !this.handlers[i].isOnce ) temp.push(this.handlers[i]);
+    this._PREVIOUS_ARGS = args || [];
+    
+    for ( let i = 0; i < this.listeners.length; ++i ) {
+      const listener = this.listeners[i];
+      if ( listener instanceof EventListener ) {
+        listener.run(...args);
+        if ( !listener.isDeleted ) temp.push(listener);
+      }
     }
-    this._handlers = temp;
+    
+    this.listeners.length = 0;
+    temp.forEach(listener => this.listeners.push(listener));
   }
 
   /**
-   * Creates an instance of EventHandler for passed handler
-   * Returns a generated id for the handler
-   * @param {function} handler 
-   * @param {Object} options
-   *  properties:
-   *    'id': (String) Sets the specified id to the handler
-   *    'isOnce': (Boolean) Sets the handler to activate only once
-   *    'priority': (String) 'first' || 'last': Determine whether to add the handler
+   * Creates an instance of EventListener for passed listener
+   * Returns a generated id for the listener
+   * @param {function} f 
+   * @param {EventListenerOptions} options
+   *  EventListenerOptions properties:
+   *    'id': {String} Sets the specified id to the listener
+   *    'isOnce' || 'once': {Boolean} Sets the listener to activate only once
+   *    'priority': {String} 'first' || 'last': Determine whether to add the listener
    *                to the front or end of the queue
    */
-  registerHandler(handler, options = {isOnce: false}) {
-    if ( !handler || typeof handler !== 'function' ) return null;
-    const isOnce = (options.hasOwnProperty('isOnce')) ? options.isOnce : false;
-    const id = (options.hasOwnProperty('id')) ? options.id : `${this.handlers.length}-${Date.now()}`;
-    if ( options.priority === 'first' ) this.handlers.unshift(new EventHandler(id, handler, isOnce));
-    else this.handlers.push(new EventHandler(id, handler, isOnce));
+  registerListener(f, options = {isOnce: false}) {
+    if ( !f || typeof f !== 'function' ||
+      (this.maxListenerCount && this.listeners.length >= this.maxListenerCount) ) {
+        return null;
+    }
+    const isOnce = (options.isOnce) ? options.isOnce : (options.once) ? options.once : false;
+    const id = (options.hasOwnProperty('id')) ? options.id : `${this.listeners.length}-${Date.now()}`;
+    const listener = new EventListener(id, f, isOnce);
+    if ( options.priority === 'first' ) this.listeners.unshift(listener);
+    else this.listeners.push(listener);
+    // Run the listener with the previous event state when persisting
+    if ( this.isPersisted && this.isSubscribed ) listener.run(...this._PREVIOUS_ARGS);
     return id;
   }
 
   /**
-   * Removes the handler with the corresponding id
+   * Removes the listener with the corresponding id
    * @param {String} id 
    */
-  removeHandler(id) {
+  removeListener(id) {
     let index = -1;
-    for ( let i = 0; i < this.handlers.length; ++i ) {
-      if ( id === this.handlers[i].id ) {
+    for ( let i = 0; i < this.listeners.length; ++i ) {
+      if ( id === this.listeners[i].id ) {
         index = i;
         break;
       };
     }
-    if ( index !== -1 ) return this.handlers.splice(index, 1)[0];
+    if ( index !== -1 ) return this.listeners.splice(index, 1)[0];
     return undefined;
   }
 
-  get name() {
-    return this._name;
+  limit(val) {
+    if ( typeof val === 'number' && val >= 0 ) {
+      this._MAX_POOL_SIZE = val;
+    }
   }
 
-  get handlers() {
-    return this._handlers;
+  get maxListenerCount() {
+    return this._MAX_POOL_SIZE;
   }
 
-  get isActive() {
-    return this._isActive;
+  get isSubscribed() {
+    return this._IS_SUBSCRIBED;
   }
 
-  set isActive(bool) {
-    this._isActive = bool;
+  set isSubscribed(bool) {
+    this._IS_SUBSCRIBED = (bool);
+  }
+
+  get isPersisted() {
+    return this._IS_PERSISTED;
+  }
+
+  set isPersisted(bool) {
+    return this._IS_PERSISTED = (bool);
   }
 }
 
 module.exports = Event;
 
-},{"./EventHandler.js":10}],9:[function(require,module,exports){
+},{"./EventListener.js":10}],9:[function(require,module,exports){
 'use strict';
 const Event = require('./Event.js');
 const instances = {};
 
 class EventEmitter {
   constructor(options = {enable: true, id: ''}) {
-    this._id = options.id;
-    this._events = {};
-    this._isEnabled = (options.hasOwnProperty('enable')) ? options.enable : true;
+    Object.defineProperty(this, 'id', {
+      value: options.id,
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(this, 'events', {
+      value: {},
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    this._EVENTS_ENABLED = (options.hasOwnProperty('enable')) ? options.enable : true;
     if ( options.id ) {
       if ( instances.hasOwnProperty(options.id) ) return instances[options.id];
       instances[options.id] = this;
@@ -814,10 +963,18 @@ class EventEmitter {
   /**
    * Register a new event for the emitter to watch
    * @param {String} eventName 
+   * @param {EventOptions} eventName
+   *  EventOptions properties:
+   *    'persist': {Boolean} Immediately emit its most recent state to any newly added listeners
+   *      Default: false
+   *    'subscribe': {Boolean} Event will execute its listeners
+   *      Default: true
+   *    'limit': {Number} Limits the pool size for listeners
+   *      Default: null (No limit)
    */
-  register(eventName) {
+  register(eventName, options = {}) {
     if ( this.hasEvent(eventName) || !this.isValidName(eventName) ) return;
-    this.events[eventName] = new Event(eventName);
+    this.events[eventName] = new Event(eventName, options);
   }
 
   /**
@@ -830,19 +987,19 @@ class EventEmitter {
   }
 
   /**
-   * Sets Event's isActive property to true
-   * Emitting the event will cause the Event's handlers to execute
+   * Sets Event's isSubscribed property to true
+   * Emitting the event will cause the Event's listeners to execute
    * @param {String} eventName 
    */
   subscribe(eventName) {
     if ( !this.hasEvent(eventName) ) this.register(eventName);
     if ( !this.isValidName(eventName) ) return;
-    this.events[eventName].isActive = true;
+    this.events[eventName].isSubscribed = true;
   }
 
   /**
-   * Sets Event's isActive property to false
-   * Prevents the Event's handlers from executing
+   * Sets Event's isSubscribed property to false
+   * Prevents the Event's listeners from executing
    * If the event does not exist yet, it will create the event
    * and then unsubscribe from it
    * @param {String} eventName 
@@ -850,40 +1007,47 @@ class EventEmitter {
   unsubscribe(eventName) {
     if ( !this.hasEvent(eventName) ) this.register(eventName);
     if ( !this.isValidName(eventName) ) return;
-    this.events[eventName].isActive = false;
+    this.events[eventName].isSubscribed = false;
   }
 
   /**
-   * Register an event handler on an event
+   * Register an event listener on an event
    * Returns a generated id for the listener
    * @param {String} eventName 
-   * @param {Function} handler 
+   * @param {Function} listener 
+   * @param {EventListenerOptions} options
+   *  EventListenerOptions properties:
+   *    'id': {String} Sets the specified id to the listener
+   *    'isOnce': {Boolean} Sets the listener to activate only once
+   *    'priority': {String} 'first' || 'last': Determine whether to add the listener
+   *                to the front or end of the queue
    */
-  addEventListener(eventName, handler, options = {once: false, priority: 'last'}) {
+  addEventListener(eventName, listener, options = {once: false, priority: 'last'}) {
     const isOnce = (options.hasOwnProperty('once')) ? options.once : false;
     const priority = (options.hasOwnProperty('priority')) ? options.priority : 'last';
     const id = (options.hasOwnProperty('id')) ? options.id : undefined;
     if ( !this.hasEvent(eventName) ) this.register(eventName);
     if ( !this.isValidName(eventName) ) return;
-    return this.events[eventName].registerHandler(handler, {isOnce: isOnce, priority: priority, id: id});
+    return this.events[eventName].registerListener(listener, {once: isOnce, priority: priority, id: id});
   }
 
   /**
    * Wrapper for addEventListener
    * @param {String} eventName 
-   * @param {Function} handler 
+   * @param {Function} listener 
+   * @param {EventListenerOption} options
    */
-  on(eventName, handler, options = undefined) {
-    return this.addEventListener(eventName, handler, options);
+  on(eventName, listener, options = undefined) {
+    return this.addEventListener(eventName, listener, options);
   }
 
   /**
    * Wrapper for addEventListener with once option enabled
    * @param {String} eventName 
-   * @param {Function} handler 
+   * @param {Function} listener 
    */
-  once(eventName, handler) {
-    return this.addEventListener(eventName, handler, {once: true});
+  once(eventName, listener) {
+    return this.addEventListener(eventName, listener, {once: true});
   }
 
   /**
@@ -892,7 +1056,7 @@ class EventEmitter {
    */
   dispatchEvent(eventName, ...args) {
     if ( !this.hasEvent(eventName) ) this.register(eventName);
-    if ( this.isEnabled ) this.events[eventName].runHandlers(...args);
+    if ( this.isEventsEnabled ) this.events[eventName].runListeners(...args);
   }
 
   /**
@@ -904,8 +1068,8 @@ class EventEmitter {
   }
 
   /**
-   * Removes handler with corresponding id
-   * Returns the deleted handler
+   * Removes listener with corresponding id
+   * Returns the deleted listener
    * @param {String} eventName 
    * @param {String} id 
    */
@@ -923,28 +1087,24 @@ class EventEmitter {
   }
 
   enable() {
-    this._isEnabled = true;
+    this._EVENTS_ENABLED = true;
   }
 
   disable() {
-    this._isEnabled = false;
+    this._EVENTS_ENABLED = false;
+  }
+
+  getEvent(name) {
+    return this.events[name];
+  }
+
+  get isEventsEnabled() {
+    return this._EVENTS_ENABLED;
   }
 
   static instanceOf(id) {
     if ( !instances.hasOwnProperty(id) ) return null;
     return instances[id];
-  }
-
-  get id() {
-    return this._id;
-  }
-
-  get events() {
-    return this._events;
-  }
-
-  get isEnabled() {
-    return this._isEnabled;
   }
 }
 
@@ -953,31 +1113,41 @@ module.exports = EventEmitter;
 },{"./Event.js":8}],10:[function(require,module,exports){
 'use strict';
 
-class EventHandler {
+class EventListener {
   constructor(id, handler, isOnce = false) {
-    this._id = id
-    this._handler = handler;
-    this._isOnce = isOnce;
+    Object.defineProperty(this, 'id', {
+      value: id,
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(this, 'handler', {
+      value: handler,
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    this._IS_ONCE = isOnce;
+    this._IS_DELETED = false;
   }
 
   run(...args) {
-    return this.handler(...args);
-  }
-
-  get id() {
-    return this._id;
-  }
-
-  get handler() {
-    return this._handler;
+    if ( this.isDeleted ) return;
+    // Toggle handler for deletion after being executed when set to occur once
+    if ( this.isOnce ) this._IS_DELETED = true;
+    if ( typeof this.handler === 'function' ) this.handler(...args);
+    else this._IS_DELETED = true;
   }
 
   get isOnce() {
-    return this._isOnce;
+    return this._IS_ONCE;
+  }
+  get isDeleted() {
+    return this._IS_DELETED;
   }
 }
 
-module.exports = EventHandler;
+module.exports = EventListener;
 
 },{}],11:[function(require,module,exports){
 // shim for using process in browser
@@ -1168,7 +1338,6 @@ process.umask = function() { return 0; };
 },{}],12:[function(require,module,exports){
 'use strict';
 const Taste = require('../index.js');
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 function add(x,y) {
   return x + y;
@@ -1185,8 +1354,10 @@ Taste.flavor('Synchronous pass test')
   .describe('Add 4 + 1')
   .test(() => {
     Taste.profile.addResult = add(4,1);
+    Taste.profile.addResultAgain = add(6,4);
   })
-  .expect('addResult').toEqual(5);
+  .expect('addResult').toEqual(5)
+  .expect('addResultAgain').toEqual('10');
 
 Taste.flavor('Synchronous fail test')
   .describe('Add 4 + 1')
