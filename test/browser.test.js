@@ -384,8 +384,8 @@ class Flavor extends Emitter {
       </a>
     `;
     node.innerHTML = html;
-    this.taste.root.appendChild(node);
     this.state.root = node;
+    this.taste.root.appendChild(node);
     this.state.IS_READY = true;
   }
 
@@ -405,7 +405,7 @@ class Flavor extends Emitter {
    * Synchronize the view with the Flavor object
    */
   update() {
-    if ( this.taste.isReady ) {
+    if ( this.isReady && this.taste.isReady ) {
       this.state.status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
       (this.isInProgress) ? 'In progress...' : 'Preparing...';
       
@@ -422,8 +422,7 @@ class Flavor extends Emitter {
       else {
         this.state.result = 'Pending...';
       }
-      
-      if ( this.isBrowser ) {
+      if ( this.root && this.isBrowser ) {
         this.getElement('status').textContent = this.state.status;
         this.getElement('title').textContent = this.state.title;
         this.getElement('timeout').textContent = this.state.timeout;
@@ -477,44 +476,43 @@ class Flavor extends Emitter {
    * Performs the defined test 
    */
   test(handler) {
-      if ( typeof handler !== 'function' ) {
-        this.state.ERROR = new Errror('Test handler is not a function');
+    if ( typeof handler !== 'function' ) {
+      this.state.ERROR = new Errror('Test handler is not a function');
+      return this;
+    }
+
+    this.emit('start');
+    this.state.test = handler;
+    this.state.IN_PROGRESS = true;
+    // Monitor flavor test duration
+    const start = Date.now();
+    this[timeIncrementer] = setInterval(() => {
+      this.state.duration = Date.now() - start;
+      if ( this.root && this.isBrowser ) {
+        this.getElement('duration').textContent = this.state.duration;
+      }
+      if ( this.state.duration >= this.state.timeout ) {
+        this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
+        this.state.IS_COMPLETE = true;
         return this;
       }
-
-      this.emit('start');
-      this.state.test = handler;
-      this.state.IN_PROGRESS = true;
-
-      // Monitor flavor test duration
-      const start = Date.now();
-      this[timeIncrementer] = setInterval(() => {
-        this.state.duration = Date.now() - start;
-        if ( this.isBrowser ) {
-          this.getElement('duration').textContent = this.state.duration;
-        }
-        if ( this.state.duration >= this.state.timeout ) {
-          this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
-          this.state.IS_COMPLETE = true;
-          return this;
-        }
-      }, 1);
+    }, 1);
       
       // Pass the sample HTML if available as an argument for the test and execute the test
       if ( this.isBrowser ) {
         // Check if Taste is ready to run tests before executing the test
         if ( this.taste.isReady ) {
           const sample = this.getElement('sampleAsHTML');
-          if ( !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+          if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
           handler(sample);
         }
         else this.taste.once('ready', () => {
           const sample = this.getElement('sampleAsHTML');
-          if ( !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+          if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
           handler(sample);
         });
       }
-      else handler(undefined);
+      else handler();
     this.update();
     return this;
   }
@@ -1376,6 +1374,7 @@ Taste.prepare('#test');
 Taste.flavor('Synchronous pass test')
   .describe('Add 4 + 1')
   .test(() => {
+    console.log(this);
     Taste.profile.addResult = add(4,1);
     Taste.profile.addResultAgain = add(6,4);
   })
