@@ -4,7 +4,7 @@ const Taste = require('./lib/Taste.js');
 
 module.exports = new Taste();
 
-},{"./lib/Taste.js":9}],2:[function(require,module,exports){
+},{"./lib/Taste.js":8}],2:[function(require,module,exports){
 'use strict';
 const Events = require('@jikurata/events');
 
@@ -30,15 +30,12 @@ class Emitter {
 
 module.exports = Emitter;
 
-},{"@jikurata/events":10}],3:[function(require,module,exports){
+},{"@jikurata/events":9}],3:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const init = Symbol('init');
 const execute = Symbol('execute');
-
-
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 /**
  * An Expectation instance is created whenever a Flavor instance is created.
@@ -76,8 +73,7 @@ class Expectation extends Emitter {
         'duration': 0,
         'IS_READY': false,
         'IS_COMPLETE': false,
-        'IS_RECORDED': false,
-        'IS_BROWSER': isBrowser
+        'IS_RECORDED': false
       }),
       enumerable: true,
       writable: false,
@@ -115,13 +111,13 @@ class Expectation extends Emitter {
     // When the taste profile emits a value for the evaluator pass the value to the comparator
     this.flavor.taste.profile.once(this.evaluator, (v) => {
       this.state.value = v;
-      if ( this.isReady ) this[execute]();
-      else this.once('ready', () => this[execute]());
+      this.once('ready', () => this[execute]());
     });
   }
 
   [execute]() {
-    if ( this.isBrowser && this.flavor.isComplete ) return;
+    if ( this.isComplete ) return;
+
     const result = this.state.comparator(this.value);
     this.state.result = (result) ? 'Passed' : 'Failed';
     this.state.IS_COMPLETE = true;
@@ -240,10 +236,6 @@ class Expectation extends Emitter {
     return this.state.result;
   }
 
-  get isBrowser() {
-    return this.state.IS_BROWSER;
-  }
-  
   get isRecorded() {
     return this.state.IS_RECORDED;
   }
@@ -259,8 +251,7 @@ class Expectation extends Emitter {
 
 module.exports = Expectation;
 
-},{"./Emitter.js":2,"./State.js":8}],4:[function(require,module,exports){
-(function (process){
+},{"./Emitter.js":2,"./State.js":7}],4:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const Expectation = require('./Expectation.js');
@@ -270,8 +261,6 @@ const appendToDOM = Symbol('appendToDOM');
 const updateSample = Symbol('updateSample');
 const timeoutId = Symbol('timeoutId');
 const timeIncrementer = Symbol('timeIncrementer');
-
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
 class Flavor extends Emitter {
   constructor(id, title, taste) {
@@ -299,19 +288,16 @@ class Flavor extends Emitter {
         'title': title,
         'description': '',
         'status': '',
-        'result': '',
         'sample': null,
         'test': null,
         'root': null,
         'timeout': 2500,
         'start': 0,
         'duration': 0,
-        'expectCompleteCounter': 0,
         'IS_READY': false,
         'IN_PROGRESS': false,
         'IS_COMPLETE': false,
-        'ERROR': false,
-        'IS_BROWSER': isBrowser
+        'ERROR': false
       }),
       enumerable: true,
       writable: false,
@@ -334,6 +320,12 @@ class Flavor extends Emitter {
       }
     });
     this.on('error', (err) => {
+      this.forEachExpectation((expect) => {
+        if ( !expect.isComplete ) {
+          expect.state.result = err;
+          expect.state.IS_COMPLETE = true;
+        }
+      });
       this.state.IS_COMPLETE = true;
     });
     // Stop the timer once the flavor test is complete
@@ -342,20 +334,16 @@ class Flavor extends Emitter {
         clearInterval(this[timeIncrementer]);
       }
       this.taste.result.flavorCount++;
+      this.taste.recordResults(this);
       this.update();
     });
 
     // Wait for window to finish loading before appending anything to the DOM
-    if ( this.isBrowser ) {
-      this.taste.once('ready', () => {
-        this[appendToDOM]();
-        this.state.IS_READY = true;
-        this.update();
-      });
-    }
-    else {
+    this.taste.once('ready', () => {
+      this[appendToDOM]();
       this.state.IS_READY = true;
-    }
+      this.update();
+    });
   }
 
   /**
@@ -395,15 +383,13 @@ class Flavor extends Emitter {
   }
 
   [updateSample]() {
-    if ( this.isBrowser ) {
-      const sampleAsHTML = this.getElement('sampleAsHTML');
-      const sampleAsText = this.getElement('sampleAsText');
-      const sampleRoot = sampleAsHTML.children[0];
-  
-      // Only overwrite innerHTML of sampleAsHTML when there is no sample root
-      if ( !sampleRoot ) sampleAsHTML.innerHTML = this.state.sample;
-      else sampleAsText.textContent = sampleAsHTML.innerHTML;
-    }
+    const sampleAsHTML = this.getElement('sampleAsHTML');
+    const sampleAsText = this.getElement('sampleAsText');
+    const sampleRoot = sampleAsHTML.children[0];
+
+    // Only overwrite innerHTML of sampleAsHTML when there is no sample root
+    if ( !sampleRoot ) sampleAsHTML.innerHTML = this.state.sample;
+    else sampleAsText.textContent = sampleAsHTML.innerHTML;
   }
 
   /**
@@ -416,20 +402,7 @@ class Flavor extends Emitter {
     this.state.status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
     (this.isInProgress) ? 'In progress...' : 'Preparing...';
     
-    // Update result state
-    if ( this.state.ERROR ) {
-      this.state.result = this.state.ERROR;
-    }
-    else if ( this.isComplete ) {
-      const results = [];
-      this.forEachExpectation((expect) => {
-        results.push(expect.state.result);
-      });
-      this.state.result = results.join(' ');
-    }
-    else this.state.result = 'Pending...';
-    
-    if ( this.root && this.isBrowser ) {
+    if ( this.root ) {
       this.getElement('status').textContent = this.state.status;
       this.getElement('title').textContent = this.state.title;
       this.getElement('timeout').textContent = this.state.timeout;
@@ -461,10 +434,8 @@ class Flavor extends Emitter {
    * @param {String} html
    */
   sample(html) {
-    if ( this.isBrowser ) {
-      this.state.sample = `${html}`;
-      this.update();
-    }
+    this.state.sample = `${html}`;
+    this.update();
     return this;
   }
 
@@ -495,28 +466,22 @@ class Flavor extends Emitter {
     this.state.start = Date.now();
     this[timeIncrementer] = setInterval(() => {
       this.state.duration = Date.now() - this.state.start;
-      if ( this.root && this.isBrowser ) {
+      if ( this.root ) {
         this.getElement('duration').textContent = this.state.duration;
       }
       if ( this.state.duration >= this.state.timeout ) {
         this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
-        this.forEachExpectation(expect => {
-          expect.state.IS_COMPLETE = true;
-        });
       }
     }, 1);
     
     try {
-      // Pass the sample HTML if available as an argument for the test and execute the test
-      if ( this.isBrowser ) {
-        // Check if Taste is ready to run tests before executing the test
-        this.taste.once('ready', () => {
-          const sample = this.getElement('sampleAsHTML');
-          if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
-          handler(sample);
-        });
-      }
-      else handler();
+      // Check if Taste is ready to run tests before executing the test
+      this.taste.once('ready', () => {
+        // Pass the sample HTML if available as an argument for the test and execute the test
+        const sample = this.getElement('sampleAsHTML');
+        if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+        handler(sample);
+      });
     }
     catch(err) {
       this.state.ERROR = err;
@@ -534,29 +499,13 @@ class Flavor extends Emitter {
     const expect = new Expectation(this, arg);
     // When all expectations are complete, then the flavor's state is complete
     expect.on('complete', () => {
-      this.state.expectCompleteCounter++;
       this.update();
       this.taste.recordResults(this);
-      if ( this.isBrowser ) {
-        if ( !this.expectationsAreComplete() ) return;
-      }
-      else {
-        // Record expectation results and print current summary when in nodejs
-        let s = `${this.state.title}\n`;
-        s += `\tResult: ${expect.state.result || this.state.ERROR}\n`;
-        s += `\tDuration: ${expect.state.duration}ms\n`;
-        s += `\tTimeout: ${this.state.timeout}ms\n`;
-        s += `\tTest: ${this.testToString()}\n`;
-        s += `\tExpectation\n`;
-        s += `\t\tExpected: ${expect.expression}\n`;
-        if ( expect.isComplete ) {
-          s += `\t\tReceived: ${expect.evaluator} = ${expect.value}\n`;
-        }
-        process.stdout.write(s + '\n');
-        this.taste.printResults();
-      }
-      this.state.IS_COMPLETE = true;
+      if ( this.expectationsAreComplete() ) {
+        this.state.IS_COMPLETE = true;
+      };
     });
+
     const profile = this.taste.profile;
     if ( !profile.has(arg)) {
       if ( profile.hasOwnProperty(arg) ) {
@@ -564,6 +513,7 @@ class Flavor extends Emitter {
       }
       else this.taste.profile.set(arg, undefined, false);
     }
+
     this.expectations.push(expect);
     this.update();
     return expect;
@@ -576,7 +526,7 @@ class Flavor extends Emitter {
   }
 
   getElement(s) {
-    if ( this.isBrowser && this.root ) return this.root.querySelector(`[data-flavor="${s}"]`);
+    if ( this.root ) return this.root.querySelector(`[data-flavor="${s}"]`);
     return null;
   }
 
@@ -620,249 +570,15 @@ class Flavor extends Emitter {
   get isComplete() {
     return this.state.IS_COMPLETE;
   }
-
-  get isBrowser() {
-    return this.state.IS_BROWSER;
-  }
 }
 
 module.exports = Flavor;
 
-}).call(this,require('_process'))
-},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":8,"_process":14}],5:[function(require,module,exports){
-'use strict';
-const Emitter = require('./Emitter.js');
-const State = require('./State.js');
-const init = Symbol('init');
-const execute = Symbol('execute');
-
-
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
-
-/**
- * An Expectation instance is created whenever a Flavor instance is created.
- * Expectation is responsible for overseeing the progress of the test and its results.
- * In order for a test to start running, the Expectation needs a test, evaluator, and
- * comparator defined.
- * However, the test needs to be called through the Flavor instance.
- * 
- * Events:
- * ready: Emits when all parameters for a test are defined
- * start: Emits when the test is executed
- * complete: Emits when the test is evaluated and results have been recorded
- */
-class NodeExpectation extends Emitter {
-  constructor(flavor, evaluator) {
-    if ( !evaluator || typeof evaluator !== 'string' ) {
-      this.state.result = new Error(`Expected a string as an argument, but instead received ${typeof evaluator}`);
-      this.state.IS_COMPLETE = true;
-      return null;
-    }
-    super();
-    Object.defineProperty(this, 'flavor', {
-      value: flavor,
-      enumerable: true,
-      writable: false,
-      configurable: false
-    });
-    Object.defineProperty(this, 'state', {
-      value: new State({
-        'expectStatement': '',
-        'evaluator': evaluator,
-        'comparator': null,
-        'value': null,
-        'result': null,
-        'duration': 0,
-        'IS_READY': false,
-        'IS_COMPLETE': false,
-        'IS_RECORDED': false,
-        'IS_BROWSER': isBrowser
-      }),
-      enumerable: true,
-      writable: false,
-      configurable: false
-    });
-    this[init]();
-  }
-
-  [init]() {
-    this.events.register('ready', {persist: true});
-    this.events.register('complete', {persist: true});
-    
-    this.state.on('change', (p, v) => {
-      if ( v ) {
-        switch(p) {
-          case 'IS_COMPLETE': return this.emit('complete');
-          default: break;
-        }
-      }
-
-      this.on('complete', () => {
-        this.state.duration = Date.now() - this.flavor.state.start;
-      });
-
-      if ( !this.isReady &&
-            this.flavor.isReady &&
-            this.evaluator && 
-            this.comparator &&
-            this.expression ) {
-        this.state.set('IS_READY', true, false);
-        this.emit('ready');
-      }
-    });
-
-    // When the taste profile emits a value for the evaluator pass the value to the comparator
-    this.flavor.taste.profile.once(this.evaluator, (v) => {
-      this.state.value = v;
-      if ( this.isReady ) this[execute]();
-      else this.once('ready', () => this[execute]());
-    });
-  }
-
-  [execute]() {
-    if ( this.isBrowser && this.flavor.isComplete ) return;
-    const result = this.state.comparator(this.value);
-    this.state.result = (result) ? 'Passed' : 'Failed';
-    this.state.IS_COMPLETE = true;
-  }
-
-  toBeLessThan(upperBound, closed = true) {
-    this.state.comparator = (v) => {
-      let inRange = true;
-      if ( closed ) inRange = v <= upperBound;
-      else inRange = v < upperBound;
-      return inRange;
-    };
-    this.state.expectStatement = `${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`;
-    return this.flavor;
-  }
-
-  toBeGreaterThan(lowerBound, closed = true) {
-    this.state.comparator = (v) => {
-      let inRange = true;
-      if ( closed ) inRange = v >= lowerBound;
-      else inRange = v > lowerBound;
-      return inRange;
-    };
-    this.state.expectStatement = `${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator}`;
-    return this.flavor;
-  }
-
-  toBeInRange(lowerBound, upperBound, param = {lower: 'closed', upper: 'closed'}) {
-    this.state.comparator = (v) => {
-      let inRange = true;
-      if ( param.lower === 'closed' ) inRange = v >= lowerBound;
-      else inRange = v > lowerBound;
-      if ( param.upper === 'closed' ) inRange = v <= upperBound;
-      else inRange = v < upperBound;
-      return inRange;
-    };
-    this.state.expectStatement = `${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`;
-    return this.flavor;
-  }
-
-  toBeFalsy() {
-    this.state.comparator = (v) => { return !(v); };
-    this.state.expectStatement = `${this.state.evaluator} to be a falsy value`;
-    return this.flavor;
-  }
-
-  toBeTruthy() {
-    this.state.comparator = (v) => { return (v); };
-    this.state.expectStatement = `${this.state.evaluator} to be a truthy value`;
-    return this.flavor;
-  }
-
-  /**
-   * Evaluates loosely typed equality (==)
-   * @param {*} value 
-   */
-  toBe(value) {
-    this.state.comparator = (v) => { return v == value; };
-    this.state.expectStatement = `${this.state.evaluator} == ${value}`;
-    return this.flavor;
-  }
-
-  /**
-   * Evaluates type-strict equality (===)
-   * @param {*} value 
-   */
-  toEqual(value) {
-    this.state.comparator = (v) => { return v === value; };
-    this.state.expectStatement = `${this.state.evaluator} === ${value}`;
-    return this.flavor;
-  }
-
-  toMatch(regex) {
-    this.state.comparator = (v) => { return v.match(regex); }
-    this.state.expectStatement = `${this.state.evaluator} matches ${regex}`;
-    return this.flavor;
-  }
-
-  /**
-   * Performs a typeof check on the value
-   * @param {String} type 
-   */
-  isTypeOf(type) {
-    this.state.comparator = (v) => { return typeof v === type }
-    this.state.expectStatement = `${this.state.evaluator} is a ${type}`;
-    return this.flavor;
-  }
-
-  /**
-   * Performs an instanceof check on the value
-   * @param {Any} prototype 
-   */
-  isInstanceOf(prototype) {
-    this.state.comparator = (v) => { return v instanceof prototype }
-    this.state.expectStatement = `${this.state.evaluator} is an instance of ${prototype}`;
-    return this.flavor;
-  }
-
-  get comparator() {
-    return this.state.comparator;
-  }
-
-  get evaluator() {
-    return this.state.evaluator;
-  }
-
-  get expression() {
-    return this.state.expectStatement;
-  }
-
-  get value() {
-    return this.state.value;
-  }
-
-  get result() {
-    return this.state.result;
-  }
-
-  get isBrowser() {
-    return this.state.IS_BROWSER;
-  }
-  
-  get isRecorded() {
-    return this.state.IS_RECORDED;
-  }
-
-  get isReady() {
-    return this.state.IS_READY;
-  }
-
-  get isComplete() {
-    return this.state.IS_COMPLETE;
-  }
-}
-
-module.exports = NodeExpectation;
-
-},{"./Emitter.js":2,"./State.js":8}],6:[function(require,module,exports){
+},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":7}],5:[function(require,module,exports){
 (function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
-const NodeExpectation = require('./NodeExpectation.js');
+const Expectation = require('./Expectation.js');
 const State = require('./State.js');
 const init = Symbol('init');
 const appendToDOM = Symbol('appendToDOM');
@@ -912,8 +628,7 @@ class NodeFlavor extends Emitter {
         'IS_READY': false,
         'IN_PROGRESS': false,
         'IS_COMPLETE': false,
-        'ERROR': false,
-        'IS_BROWSER': isBrowser
+        'ERROR': false
       }),
       enumerable: true,
       writable: false,
@@ -1025,7 +740,7 @@ class NodeFlavor extends Emitter {
    * @param {String} arg
    */
   expect(arg) {
-    const expect = new NodeExpectation(this, arg);
+    const expect = new Expectation(this, arg);
     // When all expectations are complete, then the flavor's state is complete
     expect.on('complete', () => {
       this.state.expectCompleteCounter++;
@@ -1112,7 +827,7 @@ class NodeFlavor extends Emitter {
 module.exports = NodeFlavor;
 
 }).call(this,require('_process'))
-},{"./Emitter.js":2,"./NodeExpectation.js":5,"./State.js":8,"_process":14}],7:[function(require,module,exports){
+},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":7,"_process":13}],6:[function(require,module,exports){
 'use strict';'use strict';
 const Emitter = require('./Emitter.js');
 const map = Symbol('map');
@@ -1175,7 +890,7 @@ class Profile extends Emitter {
 
 module.exports = Profile;
 
-},{"./Emitter.js":2}],8:[function(require,module,exports){
+},{"./Emitter.js":2}],7:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const map = Symbol('map');
@@ -1243,7 +958,7 @@ class State extends Emitter {
 
 module.exports = State;
 
-},{"./Emitter.js":2}],9:[function(require,module,exports){
+},{"./Emitter.js":2}],8:[function(require,module,exports){
 (function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
@@ -1349,7 +1064,7 @@ class Taste extends Emitter {
 
   recordResults(flavor) {
     flavor.forEachExpectation((expect) => {
-      if ( expect.isRecorded ) return;
+      if ( !expect.isComplete || expect.isRecorded ) return;
       this.result.expectCount++;
       if ( expect.state.result === 'Passed' ) this.result.pass++;
       else if ( expect.state.result === 'Failed' ) this.result.fail++;
@@ -1432,11 +1147,11 @@ class Taste extends Emitter {
 module.exports = Taste;
 
 }).call(this,require('_process'))
-},{"./Emitter.js":2,"./Flavor.js":4,"./NodeFlavor.js":6,"./Profile.js":7,"./State.js":8,"_process":14}],10:[function(require,module,exports){
+},{"./Emitter.js":2,"./Flavor.js":4,"./NodeFlavor.js":5,"./Profile.js":6,"./State.js":7,"_process":13}],9:[function(require,module,exports){
 'use strict';
 module.exports = require('./lib/EventEmitter.js');
 
-},{"./lib/EventEmitter.js":12}],11:[function(require,module,exports){
+},{"./lib/EventEmitter.js":11}],10:[function(require,module,exports){
 'use strict';
 const EventListener = require('./EventListener.js');
 
@@ -1565,7 +1280,7 @@ class Event {
 
 module.exports = Event;
 
-},{"./EventListener.js":13}],12:[function(require,module,exports){
+},{"./EventListener.js":12}],11:[function(require,module,exports){
 'use strict';
 const Event = require('./Event.js');
 const instances = {};
@@ -1739,7 +1454,7 @@ class EventEmitter {
 
 module.exports = EventEmitter;
 
-},{"./Event.js":11}],13:[function(require,module,exports){
+},{"./Event.js":10}],12:[function(require,module,exports){
 'use strict';
 
 class EventListener {
@@ -1778,7 +1493,7 @@ class EventListener {
 
 module.exports = EventListener;
 
-},{}],14:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -1964,7 +1679,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],15:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 'use strict';
 const Taste = require('../index.js');
 
@@ -2040,4 +1755,4 @@ if ( Taste.isBrowser ) {
 
 }
 
-},{"../index.js":1}]},{},[15]);
+},{"../index.js":1}]},{},[14]);
