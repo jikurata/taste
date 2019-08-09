@@ -115,7 +115,7 @@ class Expectation extends Emitter {
   }
 
   [execute]() {
-    if ( this.flavor.expectationsAreComplete() ) return;
+    if ( this.isBrowser && this.flavor.isComplete ) return;
     const result = this.state.comparator(this.value);
     this.state.result = (result) ? 'Passed' : 'Failed';
     this.state.IS_COMPLETE = true;
@@ -531,6 +531,7 @@ class Flavor extends Emitter {
           s += `\t\tReceived: ${expect.evaluator} = ${expect.value}\n`;
         }
         process.stdout.write(s + '\n');
+        this.taste.printResults();
       }
       this.state.IS_COMPLETE = true;
     });
@@ -846,7 +847,6 @@ class Taste extends Emitter {
   }
 
   recordResults(flavor) {
-
     flavor.forEachExpectation((expect) => {
       if ( expect.isRecorded ) return;
       this.result.expectCount++;
@@ -855,13 +855,13 @@ class Taste extends Emitter {
       else this.result.error++;
       expect.state.IS_RECORDED = true;
     });
-    if ( this.result.flavorCount === this.flavorCount ) {
-      this.result.elapsedTime = Date.now() - this[start];
-      this[printResults]();
+    if ( this.isBrowser && this.result.flavorCount === this.flavorCount) {
+      this.printResults();
     }
   }
 
-  [printResults]() {
+  printResults() {
+    this.result.elapsedTime = Date.now() - this[start];
     if ( this.isBrowser ) {
       const nav = document.createElement('nav');
       nav.className = 'taste-navigation';
