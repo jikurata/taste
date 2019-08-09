@@ -76,6 +76,7 @@ Taste.flavor('Asynchronous Code')
 ### v0.0.5
 - Add navigation menu to summary
 - Flavors can now handle multiple Expectations
+- Decoupled Flavor logic for a nodejs environment to NodeFlavor
 
 ### v0.0.4
 - Add github repo link
