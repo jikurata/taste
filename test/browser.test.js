@@ -4,7 +4,7 @@ const Taste = require('./lib/Taste.js');
 
 module.exports = new Taste();
 
-},{"./lib/Taste.js":6}],2:[function(require,module,exports){
+},{"./lib/Taste.js":7}],2:[function(require,module,exports){
 'use strict';
 const Events = require('@jikurata/events');
 
@@ -30,11 +30,12 @@ class Emitter {
 
 module.exports = Emitter;
 
-},{"@jikurata/events":7}],3:[function(require,module,exports){
+},{"@jikurata/events":8}],3:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const init = Symbol('init');
+const execute = Symbol('execute');
 
 const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 
@@ -69,10 +70,10 @@ class Expectation extends Emitter {
         'expectStatement': '',
         'evaluator': evaluator,
         'comparator': null,
+        'value': null,
         'result': null,
         'IS_READY': false,
         'IS_COMPLETE': false,
-        'WINDOW_LOADED': false,
         'IS_BROWSER': isBrowser
       }),
       enumerable: true,
@@ -83,15 +84,21 @@ class Expectation extends Emitter {
   }
 
   [init]() {
-    this.events.register('ready');
-    this.events.register('start');
-    this.events.register('complete');
+    this.events.register('ready', {persist: true});
+    this.events.register('complete', {persist: true});
     
     this.state.on('change', (p, v) => {
-      if ( !this.state.IS_READY &&
-            this.state.WINDOW_LOADED &&
-            this.state.evaluator && 
-            this.state.comparator) {
+      if ( v ) {
+        switch(p) {
+          case 'IS_COMPLETE': return this.emit('complete');
+          default: break;
+        }
+      }
+
+      if ( !this.isReady &&
+            this.flavor.isReady &&
+            this.evaluator && 
+            this.comparator) {
         this.state.set('IS_READY', true, false);
         this.emit('ready');
       }
@@ -99,31 +106,17 @@ class Expectation extends Emitter {
 
     // When the taste profile emits a value for the evaluator pass the value to the comparator
     this.flavor.taste.profile.once(this.evaluator, (v) => {
-      if ( this.isReady ) {
-        if ( this.flavor.isComplete ) return;
-        const result = this.state.comparator(v);
-        this.state.result = (result) ? 'Passed' : 'Failed';
-        this.state.IS_COMPLETE = true;
-        this.emit('complete', result);
-      }
-      else {
-        this.once('ready', () => {
-          if ( this.flavor.isComplete ) return;
-          const result = this.state.comparator(v);
-          this.state.result = (result) ? 'Passed' : 'Failed';
-          this.state.IS_COMPLETE = true;
-          this.emit('complete', result);
-        });
-      }
+      this.state.value = v;
+      if ( this.isReady ) this[execute]();
+      else this.once('ready', () => this[execute]());
     });
-    if ( this.isBrowser ) {
-      window.addEventListener('load', () => this.state.WINDOW_LOADED = true);
-    }
-    else this.state.WINDOW_LOADED = true;
   }
 
-  update(expression) {
-    this.state.expectStatement = expression;
+  [execute]() {
+    if ( this.flavor.isComplete ) return;
+    const result = this.state.comparator(this.value);
+    this.state.result = (result) ? 'Passed' : 'Failed';
+    this.state.IS_COMPLETE = true;
   }
 
   toBeLessThan(upperBound, closed = true) {
@@ -219,12 +212,20 @@ class Expectation extends Emitter {
     return this.flavor;
   }
 
+  get comparator() {
+    return this.state.comparator;
+  }
+
   get evaluator() {
     return this.state.evaluator;
   }
 
   get expression() {
     return this.state.expectStatement;
+  }
+
+  get value() {
+    return this.state.value;
   }
 
   get result() {
@@ -246,7 +247,7 @@ class Expectation extends Emitter {
 
 module.exports = Expectation;
 
-},{"./Emitter.js":2,"./State.js":5}],4:[function(require,module,exports){
+},{"./Emitter.js":2,"./State.js":6}],4:[function(require,module,exports){
 (function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
@@ -307,14 +308,15 @@ class Flavor extends Emitter {
   }
 
   [init]() {
+    this.events.register('ready', {persist: true});
+    this.events.register('complete', {persist: true});
     this.state.on('change', (p, v) => {
       this.update();
       switch(p) {
-        case 'IS_COMPLETE':
-          if ( v ) this.emit('complete');
-          break;
+        case 'IS_READY': return this.emit('ready');
+        case 'IS_COMPLETE': return this.emit('complete');
+        default: return;
       }
-      this.emit(p, v);
     });
     // Stop the timer once the flavor test is complete
     this.on('complete', () => {
@@ -325,30 +327,30 @@ class Flavor extends Emitter {
 
     // Wait for window to finish loading before appending anything to the DOM
     if ( this.isBrowser ) {
-      if ( this.taste.isReady ) {
+      this.taste.once('ready', () => {
         this[appendToDOM]();
-        this.update();
-      }
-      else this.taste.once('ready', () => {
-        this[appendToDOM]();
+        this.state.IS_READY = true;
         this.update();
       });
     }
     else {
-      this.once('IS_COMPLETE', () => {
-        // TODO: Refactor to handle multiple expectations
+      this.on('complete', () => {
         let s = `${this.state.title}\n`;
         s += `\tStatus: ${this.state.status}\n`;
         s += `\tResult: ${this.state.result}\n`;
         s += `\tDuration: ${this.state.duration}ms\n`;
         s += `\tTimeout: ${this.state.timeout}ms\n`;
         s += `\tTest: ${this.testToString()}\n`;
+        s += `\tExpectations\n`;
         this.forEachExpectation((expect) => {
-          s += `\tExpects: ${expect.expression}\n`;
-          s += `\tReceived: ${expect.evalauator} = ${this.taste.profile[expect.evalauator]}\n`;
+          s += `\t\tExpected: ${expect.expression}\n`;
+          if ( expect.isComplete ) {
+            s += `\t\tReceived: ${expect.evaluator} = ${expect.value}\n`;
+          }
         });
         process.stdout.write(s + '\n');
-      });
+      }, {last: true});
+      this.state.IS_READY = true;
     }
   }
 
@@ -386,7 +388,6 @@ class Flavor extends Emitter {
     node.innerHTML = html;
     this.state.root = node;
     this.taste.root.appendChild(node);
-    this.state.IS_READY = true;
   }
 
   [updateSample]() {
@@ -405,48 +406,49 @@ class Flavor extends Emitter {
    * Synchronize the view with the Flavor object
    */
   update() {
-    if ( this.isReady && this.taste.isReady ) {
-      this.state.status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
-      (this.isInProgress) ? 'In progress...' : 'Preparing...';
-      
-      if ( this.state.ERROR ) {
-        this.state.result = this.state.ERROR;
-      }
-      else if ( this.isComplete ) {
-        const results = [];
-        this.forEachExpectation((expect) => {
-          results.push(expect.state.result);
-        });
-        this.state.result = results.join(' ');
-      }
-      else {
-        this.state.result = 'Pending...';
-      }
-      if ( this.root && this.isBrowser ) {
-        this.getElement('status').textContent = this.state.status;
-        this.getElement('title').textContent = this.state.title;
-        this.getElement('timeout').textContent = this.state.timeout;
-        this.getElement('description').textContent = this.state.description;
-        this[updateSample]();
-        this.getElement('test').textContent = this.testToString();
-        const results = [];
-        this.getElement('expectation').innerHTML = '';
-        this.forEachExpectation((expect) => {
-          let received = '';
-          if ( expect.isComplete ) {
-            results.push(expect.result);
-            received = `${expect.evaluator} = ${this.taste.profile[expect.evaluator]}`;
-          }
-          else if ( this.state.ERROR ) {
-            results.push(this.state.ERROR);
-          }
-          const html = `
-          <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.expression}</span></p>
-          <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${received}</span></p>`;
-          this.getElement('expectation').innerHTML += html;
-        });
-        this.getElement('result').textContent = results.join(' ');
-      }
+    if ( !this.isReady ) return;
+
+    // Update the status state
+    this.state.status = (this.state.ERROR) ? 'Error' : (this.isComplete) ? 'Complete' :
+    (this.isInProgress) ? 'In progress...' : 'Preparing...';
+    
+    // Update result state
+    if ( this.state.ERROR ) {
+      this.state.result = this.state.ERROR;
+    }
+    else if ( this.isComplete ) {
+      const results = [];
+      this.forEachExpectation((expect) => {
+        results.push(expect.state.result);
+      });
+      this.state.result = results.join(' ');
+    }
+    else this.state.result = 'Pending...';
+    
+    if ( this.root && this.isBrowser ) {
+      this.getElement('status').textContent = this.state.status;
+      this.getElement('title').textContent = this.state.title;
+      this.getElement('timeout').textContent = this.state.timeout;
+      this.getElement('description').textContent = this.state.description;
+      this[updateSample]();
+      this.getElement('test').textContent = this.testToString();
+      const results = [];
+      this.getElement('expectation').innerHTML = '';
+      this.forEachExpectation((expect) => {
+        let received = '';
+        if ( expect.isComplete ) {
+          results.push(expect.result);
+          received = `${expect.evaluator} = ${expect.value}`;
+        }
+        else if ( this.state.ERROR ) {
+          results.push(this.state.ERROR);
+        }
+        const html = `
+        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.expression}</span></p>
+        <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${received}</span></p>`;
+        this.getElement('expectation').innerHTML += html;
+      });
+      this.getElement('result').textContent = results.join(' ');
     }
   }
 
@@ -481,7 +483,6 @@ class Flavor extends Emitter {
       return this;
     }
 
-    this.emit('start');
     this.state.test = handler;
     this.state.IN_PROGRESS = true;
     // Monitor flavor test duration
@@ -494,19 +495,14 @@ class Flavor extends Emitter {
       if ( this.state.duration >= this.state.timeout ) {
         this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
         this.state.IS_COMPLETE = true;
-        return this;
       }
     }, 1);
-      
+    
+
       // Pass the sample HTML if available as an argument for the test and execute the test
       if ( this.isBrowser ) {
         // Check if Taste is ready to run tests before executing the test
-        if ( this.taste.isReady ) {
-          const sample = this.getElement('sampleAsHTML');
-          if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
-          handler(sample);
-        }
-        else this.taste.once('ready', () => {
+        this.taste.once('ready', () => {
           const sample = this.getElement('sampleAsHTML');
           if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
           handler(sample);
@@ -527,11 +523,18 @@ class Flavor extends Emitter {
     // When all expectations are complete, then the flavor's state is complete
     expect.on('complete', () => {
       this.update();
-      if ( this.expectationsAreComplete() ) {
-        this.state.IS_COMPLETE = true;
+      if ( this.isBrowser ) {
+        if ( !this.expectationsAreComplete() ) return;
       }
+      this.state.IS_COMPLETE = true;
     });
-    this.taste.profile.set(arg, null, false);
+    const profile = this.taste.profile;
+    if ( !profile.has(arg)) {
+      if ( profile.hasOwnProperty(arg) ) {
+        profile.emit(arg, profile[arg]);
+      }
+      else this.taste.profile.set(arg, undefined, false);
+    }
     this.expectations.push(expect);
     this.update();
     return expect;
@@ -597,16 +600,12 @@ class Flavor extends Emitter {
 module.exports = Flavor;
 
 }).call(this,require('_process'))
-},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":5,"_process":11}],5:[function(require,module,exports){
-'use strict';
+},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":6,"_process":12}],5:[function(require,module,exports){
+'use strict';'use strict';
 const Emitter = require('./Emitter.js');
 const map = Symbol('map');
 
-/**
- * A State object is intended to handle type String keys
- * and primitive type values
- */
-class State extends Emitter {
+class Profile extends Emitter {
   constructor(o = {}) {
     super();
     this[map] = {};
@@ -620,7 +619,10 @@ class State extends Emitter {
    * @param {*} v 
    */
   set(k, v, emit = true) {
-    if ( !this[map].hasOwnProperty(k) ) {
+    if ( !this.events.hasEvent(k) ) {
+      this.events.register(k, {persist: true});
+    }
+    if ( !this.hasOwnProperty(k) ) {
       Object.defineProperty(this, k, {
         configurable: false,
         get: () => this[map][k],
@@ -630,7 +632,7 @@ class State extends Emitter {
     const oldVal = this[map][k];
     if ( v !== oldVal ) {
       this[map][k] = v;
-      if ( emit ) this.emit('change', k, v, oldVal);
+      if ( emit ) this.emit(k, v, oldVal);
     }
   }
 
@@ -659,13 +661,82 @@ class State extends Emitter {
   }
 }
 
-module.exports = State;
+module.exports = Profile;
 
 },{"./Emitter.js":2}],6:[function(require,module,exports){
+'use strict';
+const Emitter = require('./Emitter.js');
+const map = Symbol('map');
+
+/**
+ * A State object is intended to handle type String keys
+ * and primitive type values
+ */
+class State extends Emitter {
+  constructor(o = {}) {
+    super();
+    this[map] = {};
+    this.setAll(o);
+  }
+
+  /**
+   * Generates a getter and setter for the key on the State object
+   * The value is stored in the map Symbol
+   * @param {String} k 
+   * @param {*} v 
+   */
+  set(k, v, emit = true) {
+    this.registerKey(k,v);
+    const oldVal = this[map][k];
+    if ( v !== oldVal ) {
+      this[map][k] = v;
+      if ( emit ) this.emit('change', k, v, oldVal);
+    }
+  }
+
+  setAll(o) {
+    const keys = Object.keys(o);
+    for ( let i = 0; i < keys.length; ++i ) this.set(keys[i], o[keys[i]]);
+  }
+
+  registerKey(k) {
+    if ( !this.hasOwnProperty(k) ) {
+      Object.defineProperty(this, k, {
+        configurable: false,
+        get: () => this[map][k],
+        set: (val) => this.set(k, val)
+      });
+    }
+  }
+
+  remove(k) {
+    if ( this.has(k) ) {
+      delete this[k];
+      delete this[map][k];
+    }
+  }
+
+  has(k) {
+    return this[map].hasOwnProperty(k);
+  }
+
+  toObject() {
+    return this[map];
+  }
+
+  keys() {
+    return Object.keys(this[map]);
+  }
+}
+
+module.exports = State;
+
+},{"./Emitter.js":2}],7:[function(require,module,exports){
 (function (process){
 'use strict';
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
+const Profile = require('./Profile.js');
 const Flavor = require('./Flavor.js');
 const init = Symbol('init');
 const start = Symbol('start');
@@ -687,7 +758,7 @@ class Taste extends Emitter {
       configurable: false
     });
     Object.defineProperty(this, 'profile', {
-      value: new State(),
+      value: new Profile(),
       enumerable: true,
       writable: false,
       configurable: false,
@@ -696,6 +767,7 @@ class Taste extends Emitter {
       value: new State({
         'root': null,
         'IS_READY': false,
+        'IS_COMPLETE': false,
         'IS_BROWSER': isBrowser
       }),
       enumerable: true,
@@ -720,11 +792,13 @@ class Taste extends Emitter {
   }
 
   [init]() {
-    this.profile.on('change', (p, v) => this.profile.emit(p, v));
+    this.events.register('ready', {persist: true});
+    this.events.register('complete', {persist: true});
     this.state.on('change', (p, v) => {
       if ( v ) {
         switch(p) {
           case 'IS_READY': return this.emit('ready');
+          case 'IS_COMPLETE': return this.emit('complete');
           default: return;
         }
       }
@@ -814,13 +888,15 @@ class Taste extends Emitter {
       this.root.insertAdjacentElement('afterbegin', node.cloneNode(true));
     }
     else {
-      let s = `Number of tests: ${this.result.count}\n`;
-      s += `Passed: ${this.result.pass}/${this.result.count}\n`;
-      s += `Failed: ${this.result.fail}/${this.result.count}\n`;
-      s += `Errors: ${this.result.error}/${this.result.count}\n`;
+      let s = `Number of flavors: ${this.result.flavorCount}\n`;
+      s += `Number of Expectations: ${this.result.expectCount}\n`;
+      s += `Passed: ${this.result.pass}/${this.result.expectCount}\n`;
+      s += `Failed: ${this.result.fail}/${this.result.expectCount}\n`;
+      s += `Errors: ${this.result.error}/${this.result.expectCount}\n`;
       s += `Elapsed Time: ${this.result.elapsedTime}ms\n`;
       process.stdout.write(s + '\n');
     }
+    this.state.IS_COMPLETE = true;
   }
 
   get root() {
@@ -831,6 +907,10 @@ class Taste extends Emitter {
     return this.state.IS_READY;
   }
 
+  get isComplete() {
+    return this.state.IS_COMPLETE;
+  }
+
   get isBrowser() {
     return this.state.IS_BROWSER;
   }
@@ -839,11 +919,11 @@ class Taste extends Emitter {
 module.exports = Taste;
 
 }).call(this,require('_process'))
-},{"./Emitter.js":2,"./Flavor.js":4,"./State.js":5,"_process":11}],7:[function(require,module,exports){
+},{"./Emitter.js":2,"./Flavor.js":4,"./Profile.js":5,"./State.js":6,"_process":12}],8:[function(require,module,exports){
 'use strict';
 module.exports = require('./lib/EventEmitter.js');
 
-},{"./lib/EventEmitter.js":9}],8:[function(require,module,exports){
+},{"./lib/EventEmitter.js":10}],9:[function(require,module,exports){
 'use strict';
 const EventListener = require('./EventListener.js');
 
@@ -861,16 +941,26 @@ class Event {
       writable: false,
       configurable: false
     });
-    this._PREVIOUS_ARGS = [];
-    this._MAX_POOL_SIZE = (param.hasOwnProperty('limit')) ? param.limit : null;
-    this._IS_PERSISTED = (param.hasOwnProperty('persist')) ? param.persist : false;
-    this._IS_SUBSCRIBED = (param.hasOwnProperty('subscribe')) ? param.subscribe : true;
+    Object.defineProperty(this, 'state', {
+      value: {
+        'PREVIOUS_ARGS': [],
+        'EMITTED_ONCE': false,
+        'MAX_POOL_SIZE': (param.hasOwnProperty('limit')) ? param.limit : null,
+        'PERSISTED': (param.hasOwnProperty('persist')) ? param.persist : false,
+        'SUBSCRIBED': (param.hasOwnProperty('subscribe')) ? param.subscribe : true
+      },
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
   }
 
   runListeners(...args) {
     if ( !this.isSubscribed ) return;
+    this.state.EMITTED_ONCE = true;
+
     const temp = [];
-    this._PREVIOUS_ARGS = args || [];
+    this.state.PREVIOUS_ARGS = args || [];
     
     for ( let i = 0; i < this.listeners.length; ++i ) {
       const listener = this.listeners[i];
@@ -896,17 +986,20 @@ class Event {
    *                to the front or end of the queue
    */
   registerListener(f, options = {isOnce: false}) {
-    if ( !f || typeof f !== 'function' ||
-      (this.maxListenerCount && this.listeners.length >= this.maxListenerCount) ) {
-        return null;
+    if ( !f || typeof f !== 'function') {
+      throw new Error(`Event ${this.name} expected an argument of type function`);
     }
+    else if (this.maxListenerCount > 0 && this.listeners.length >= this.maxListenerCount) {
+      throw new Error(`Could not register listener. Event ${this.name} listener pool exceeds its maximum size of ${this.maxListenerCount}`);
+    }
+
     const isOnce = (options.isOnce) ? options.isOnce : (options.once) ? options.once : false;
     const id = (options.hasOwnProperty('id')) ? options.id : `${this.listeners.length}-${Date.now()}`;
     const listener = new EventListener(id, f, isOnce);
     if ( options.priority === 'first' ) this.listeners.unshift(listener);
     else this.listeners.push(listener);
     // Run the listener with the previous event state when persisting
-    if ( this.isPersisted && this.isSubscribed ) listener.run(...this._PREVIOUS_ARGS);
+    if ( this.isPersisted && this.isSubscribed && this.hasEmittedAtLeastOnce ) listener.run(...this.state.PREVIOUS_ARGS);
     return id;
   }
 
@@ -926,59 +1019,58 @@ class Event {
     return undefined;
   }
 
-  limit(val) {
-    if ( typeof val === 'number' && val >= 0 ) {
-      this._MAX_POOL_SIZE = val;
-    }
+  get maxListenerCount() {
+    return this.state.MAX_POOL_SIZE;
   }
 
-  get maxListenerCount() {
-    return this._MAX_POOL_SIZE;
+  set setMaxListenerCount(val) {
+    if ( typeof val === 'number' && val >= 0 ) {
+      this.state.MAX_POOL_SIZE = val;
+    };
+  }
+
+  get hasEmittedAtLeastOnce() {
+    return this.state.EMITTED_ONCE;
   }
 
   get isSubscribed() {
-    return this._IS_SUBSCRIBED;
+    return this.state.SUBSCRIBED;
   }
 
   set isSubscribed(bool) {
-    this._IS_SUBSCRIBED = (bool);
+    this.state.SUBSCRIBED = !!bool;
   }
 
   get isPersisted() {
-    return this._IS_PERSISTED;
+    return this.state.PERSISTED;
   }
 
   set isPersisted(bool) {
-    return this._IS_PERSISTED = (bool);
+    this.state.PERSISTED = !!bool;
   }
 }
 
 module.exports = Event;
 
-},{"./EventListener.js":10}],9:[function(require,module,exports){
+},{"./EventListener.js":11}],10:[function(require,module,exports){
 'use strict';
 const Event = require('./Event.js');
 const instances = {};
 
 class EventEmitter {
   constructor(options = {enable: true, id: ''}) {
+    if ( options.id ) {
+      if ( instances.hasOwnProperty(options.id) ) return instances[options.id];
+      instances[options.id] = this;
+    }
     Object.defineProperty(this, 'id', {
       value: options.id,
       enumerable: true,
       writable: false,
       configurable: false
     });
-    Object.defineProperty(this, 'events', {
-      value: {},
-      enumerable: true,
-      writable: false,
-      configurable: false
-    });
+    this.events = {};
     this._EVENTS_ENABLED = (options.hasOwnProperty('enable')) ? options.enable : true;
-    if ( options.id ) {
-      if ( instances.hasOwnProperty(options.id) ) return instances[options.id];
-      instances[options.id] = this;
-    }
   }
 
   /**
@@ -1077,7 +1169,10 @@ class EventEmitter {
    */
   dispatchEvent(eventName, ...args) {
     if ( !this.hasEvent(eventName) ) this.register(eventName);
-    if ( this.isEventsEnabled ) this.events[eventName].runListeners(...args);
+    if ( this.isEventsEnabled ) {
+      const event = this.events[eventName];
+      event.runListeners(...args);
+    }
   }
 
   /**
@@ -1131,7 +1226,7 @@ class EventEmitter {
 
 module.exports = EventEmitter;
 
-},{"./Event.js":8}],10:[function(require,module,exports){
+},{"./Event.js":9}],11:[function(require,module,exports){
 'use strict';
 
 class EventListener {
@@ -1170,7 +1265,7 @@ class EventListener {
 
 module.exports = EventListener;
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -1356,7 +1451,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 'use strict';
 const Taste = require('../index.js');
 
@@ -1374,7 +1469,6 @@ Taste.prepare('#test');
 Taste.flavor('Synchronous pass test')
   .describe('Add 4 + 1')
   .test(() => {
-    console.log(this);
     Taste.profile.addResult = add(4,1);
     Taste.profile.addResultAgain = add(6,4);
   })
@@ -1384,9 +1478,9 @@ Taste.flavor('Synchronous pass test')
 Taste.flavor('Synchronous fail test')
   .describe('Add 4 + 1')
   .test(() => {
-    Taste.profile.addResult = add(4,1);
+    Taste.profile.wrongResult = add(4,1);
   })
-  .expect('addResult').toEqual(3);
+  .expect('wrongResult').toEqual(3);
 
 Taste.flavor('Asynchronous pass test')
   .timeout(5000)
@@ -1403,19 +1497,19 @@ Taste.flavor('Asynchronous fail test')
   .describe('Fails after 3000ms')
   .test(() => {
     setTimeout(() => {
-      Taste.profile.asyncResult = true;
+      Taste.profile.asyncFailed = true;
     }, 3000);
   })
-  .expect('asyncResult').toBeFalsy();
+  .expect('asyncFailed').toBeFalsy();
 
 Taste.flavor('Asynchronous timeout test')
   .describe('Test exceeds timeout')
   .test(() => {
     setTimeout(() => {
-      Taste.profile.asyncResult = true;
+      Taste.profile.asyncTimeout = true;
     }, 3000);
   })
-  .expect('asyncResult').toBeTruthy();
+  .expect('asyncTimeout').toBeTruthy();
   
 if ( Taste.isBrowser ) {
   Taste.flavor('Taste sample dom test')
@@ -1433,4 +1527,4 @@ if ( Taste.isBrowser ) {
 
 }
 
-},{"../index.js":1}]},{},[12]);
+},{"../index.js":1}]},{},[13]);

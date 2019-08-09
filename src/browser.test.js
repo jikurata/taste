@@ -24,9 +24,9 @@ Taste.flavor('Synchronous pass test')
 Taste.flavor('Synchronous fail test')
   .describe('Add 4 + 1')
   .test(() => {
-    Taste.profile.addResult = add(4,1);
+    Taste.profile.wrongResult = add(4,1);
   })
-  .expect('addResult').toEqual(3);
+  .expect('wrongResult').toEqual(3);
 
 Taste.flavor('Asynchronous pass test')
   .timeout(5000)
@@ -43,19 +43,19 @@ Taste.flavor('Asynchronous fail test')
   .describe('Fails after 3000ms')
   .test(() => {
     setTimeout(() => {
-      Taste.profile.asyncResult = true;
+      Taste.profile.asyncFailed = true;
     }, 3000);
   })
-  .expect('asyncResult').toBeFalsy();
+  .expect('asyncFailed').toBeFalsy();
 
 Taste.flavor('Asynchronous timeout test')
   .describe('Test exceeds timeout')
   .test(() => {
     setTimeout(() => {
-      Taste.profile.asyncResult = true;
+      Taste.profile.asyncTimeout = true;
     }, 3000);
   })
-  .expect('asyncResult').toBeTruthy();
+  .expect('asyncTimeout').toBeTruthy();
   
 if ( Taste.isBrowser ) {
   Taste.flavor('Taste sample dom test')
