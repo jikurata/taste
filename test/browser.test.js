@@ -74,6 +74,7 @@ class Expectation extends Emitter {
         'result': null,
         'IS_READY': false,
         'IS_COMPLETE': false,
+        'IS_RECORDED': false,
         'IS_BROWSER': isBrowser
       }),
       enumerable: true,
@@ -98,7 +99,8 @@ class Expectation extends Emitter {
       if ( !this.isReady &&
             this.flavor.isReady &&
             this.evaluator && 
-            this.comparator) {
+            this.comparator &&
+            this.expression ) {
         this.state.set('IS_READY', true, false);
         this.emit('ready');
       }
@@ -113,7 +115,7 @@ class Expectation extends Emitter {
   }
 
   [execute]() {
-    if ( this.flavor.isComplete ) return;
+    if ( this.flavor.expectationsAreComplete() ) return;
     const result = this.state.comparator(this.value);
     this.state.result = (result) ? 'Passed' : 'Failed';
     this.state.IS_COMPLETE = true;
@@ -235,6 +237,10 @@ class Expectation extends Emitter {
   get isBrowser() {
     return this.state.IS_BROWSER;
   }
+  
+  get isRecorded() {
+    return this.state.IS_RECORDED;
+  }
 
   get isReady() {
     return this.state.IS_READY;
@@ -293,6 +299,7 @@ class Flavor extends Emitter {
         'root': null,
         'timeout': 2500,
         'duration': 0,
+        'expectCompleteCounter': 0,
         'IS_READY': false,
         'IN_PROGRESS': false,
         'IS_COMPLETE': false,
@@ -334,22 +341,6 @@ class Flavor extends Emitter {
       });
     }
     else {
-      this.on('complete', () => {
-        let s = `${this.state.title}\n`;
-        s += `\tStatus: ${this.state.status}\n`;
-        s += `\tResult: ${this.state.result}\n`;
-        s += `\tDuration: ${this.state.duration}ms\n`;
-        s += `\tTimeout: ${this.state.timeout}ms\n`;
-        s += `\tTest: ${this.testToString()}\n`;
-        s += `\tExpectations\n`;
-        this.forEachExpectation((expect) => {
-          s += `\t\tExpected: ${expect.expression}\n`;
-          if ( expect.isComplete ) {
-            s += `\t\tReceived: ${expect.evaluator} = ${expect.value}\n`;
-          }
-        });
-        process.stdout.write(s + '\n');
-      }, {last: true});
       this.state.IS_READY = true;
     }
   }
@@ -522,9 +513,24 @@ class Flavor extends Emitter {
     const expect = new Expectation(this, arg);
     // When all expectations are complete, then the flavor's state is complete
     expect.on('complete', () => {
+      this.state.expectCompleteCounter++;
       this.update();
+      this.taste.recordResults(this);
       if ( this.isBrowser ) {
         if ( !this.expectationsAreComplete() ) return;
+      }
+      else {
+        let s = `${this.state.title}\n`;
+        s += `\tResult: ${this.state.result}\n`;
+        s += `\tDuration: ${this.state.duration}ms\n`;
+        s += `\tTimeout: ${this.state.timeout}ms\n`;
+        s += `\tTest: ${this.testToString()}\n`;
+        s += `\tExpectation\n`;
+        s += `\t\tExpected: ${expect.expression}\n`;
+        if ( expect.isComplete ) {
+          s += `\t\tReceived: ${expect.evaluator} = ${expect.value}\n`;
+        }
+        process.stdout.write(s + '\n');
       }
       this.state.IS_COMPLETE = true;
     });
@@ -833,21 +839,23 @@ class Taste extends Emitter {
     const id = `flavor${Object.keys(this.flavors).length}`;
     const flavor = new Flavor(id, title, this);
     flavor.on('complete', () => {
-      this[recordResults](flavor);
+      this.result.flavorCount++;
     });
     this.flavors[id] = flavor;
     return flavor;
   }
 
-  [recordResults](flavor) {
-    this.result.flavorCount++;
+  recordResults(flavor) {
+
     flavor.forEachExpectation((expect) => {
+      if ( expect.isRecorded ) return;
       this.result.expectCount++;
       if ( expect.state.result === 'Passed' ) this.result.pass++;
       else if ( expect.state.result === 'Failed' ) this.result.fail++;
       else this.result.error++;
+      expect.state.IS_RECORDED = true;
     });
-    if ( this.result.flavorCount === Object.keys(this.flavors).length ) {
+    if ( this.result.flavorCount === this.flavorCount ) {
       this.result.elapsedTime = Date.now() - this[start];
       this[printResults]();
     }
@@ -888,7 +896,7 @@ class Taste extends Emitter {
       this.root.insertAdjacentElement('afterbegin', node.cloneNode(true));
     }
     else {
-      let s = `Number of flavors: ${this.result.flavorCount}\n`;
+      let s = `Number of flavors: ${this.flavorCount}\n`;
       s += `Number of Expectations: ${this.result.expectCount}\n`;
       s += `Passed: ${this.result.pass}/${this.result.expectCount}\n`;
       s += `Failed: ${this.result.fail}/${this.result.expectCount}\n`;
@@ -901,6 +909,10 @@ class Taste extends Emitter {
 
   get root() {
     return this.state.root;
+  }
+
+  get flavorCount() {
+    return Object.keys(this.flavors).length;
   }
 
   get isReady() {
