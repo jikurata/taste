@@ -1,5 +1,6 @@
 'use strict';
 const Taste = require('../index.js');
+const Flavor = require('../lib/Flavor.js');
 
 function add(x,y) {
   return x + y;
@@ -56,6 +57,17 @@ Taste.flavor('Asynchronous timeout test')
     }, 3000);
   })
   .expect('asyncTimeout').toBeTruthy();
+
+Taste.flavor('Pass Flavor instance to test')
+.describe('this is the current Flavor in the test scope')
+.test((flavor) => {
+  console.log('flavor', flavor, this);
+  Taste.profile.thisIsFlavor = this instanceof Flavor;
+})
+.expect('thisIsFlavor').toBeTruthy()
+.finished((flavor) => {
+  console.log('done', flavor);
+});
   
 if ( Taste.isBrowser ) {
   Taste.flavor('Taste sample dom test')
