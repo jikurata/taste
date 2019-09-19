@@ -80,7 +80,7 @@ Taste.flavor('Asynchronous Code')
 - Plans for next update:
     - Provide a more constructive and semantic environment for error handling to provide easier debugging
 - Known Bugs:
-    - Taste 'complete' state emits true before all Flavors can be resolved when executing synchronous code. For the time being, either use the newly implemented finished() method to handle post code execution
+    - Taste 'complete' state emits true before all Flavors can be resolved when executing synchronous code. For the time being, use the newly implemented finished() method to handle post code execution
 
 ### v0.0.5
 - Add navigation menu to summary
