@@ -1,4 +1,4 @@
-# Taste v0.0.5
+# Taste v0.0.6
 Test client-side code directly in a web browser
 ---
 ## Install
@@ -10,8 +10,8 @@ Taste utilizes chainable functions to produce simple, organized code structures
 ```
     Taste.flavor('test title')
         .describe('test description')
-        .test(() => {
-            Taste.profile.foo = 'bar';
+        .test(profile => {
+            profile.foo = 'bar';
         })
         .expect('foo').toMatch('bar');
 ```
@@ -33,12 +33,12 @@ const Taste = require('@jikurata/taste');
 // Taste.flavor() creates a new context for testing
 Taste.flavor('add(x,y)')
     .describe('Returns the sum of two numbers')
-    .test(() => {
-        // Taste.profile is an object meant for storing the results of a test
-        Taste.profile.addResult = add(4,1);
-        Taste.profile.addStrings = add('4',1);
+    .test(profile => {
+        // profile is an object meant for storing the results of a test
+        profile.addResult = add(4,1);
+        profile.addStrings = add('4',1);
     })
-    .expect('addResult').toEqual(5) // Pass the property used in Taste.profile into expect()
+    .expect('addResult').toEqual(5) // Pass the property used in profile into expect()
     .expect('addStrings').toEqual(5); // Include as many expectations as needed for the test
 
 // New context for a new test
@@ -51,10 +51,10 @@ Taste.flavor('appendDiv()')
         </section>
     `) 
     // Add an argument to the test function to reference the sample
-    .test((sample) => {
+    .test((profile, sample) => {
         const root = sample.getElementById('someSampleRoot);
         appendDiv(root);
-        Taste.profile.childrenLength = root.children.length;
+        profile.childrenLength = root.children.length;
     })
     .expect('childrenLength').toEqual(2);
 ```
@@ -63,9 +63,9 @@ Asynchronous code is OK
 Taste.flavor('Asynchronous Code')
     .describe('Resolves after 3000ms')
     .timeout(5000) // Adjust the timeout on the test to an appropriate duration (default = 2500)
-    .test(() => {
+    .test(profile => {
         window.setTimeout(() => {
-            Taste.profile.asyncResult = true;
+            profile.asyncResult = true;
         }, 3000);
     })
     .expect('asyncResult').toBeTruthy();
@@ -73,6 +73,15 @@ Taste.flavor('Asynchronous Code')
 ```
 ## Version Log
 ---
+### v0.0.6
+- Implement custom Error types
+- Flavors now print errors instead of suppressing them
+- Flavors now have a finished() method that executes when a Flavor test is complete
+- Plans for next update:
+    - Provide a more constructive and semantic environment for error handling to provide easier debugging
+- Known Bugs:
+    - Taste 'complete' state emits true before all Flavors can be resolved when executing synchronous code. For the time being, either use the newly implemented finished() method to handle post code execution
+
 ### v0.0.5
 - Add navigation menu to summary
 - Flavors can now handle multiple Expectations

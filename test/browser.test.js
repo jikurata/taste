@@ -4,7 +4,7 @@ const Taste = require('./lib/Taste.js');
 
 module.exports = new Taste();
 
-},{"./lib/Taste.js":8}],2:[function(require,module,exports){
+},{"./lib/Taste.js":9}],2:[function(require,module,exports){
 'use strict';
 const Events = require('@jikurata/events');
 
@@ -30,8 +30,45 @@ class Emitter {
 
 module.exports = Emitter;
 
-},{"@jikurata/events":9}],3:[function(require,module,exports){
+},{"@jikurata/events":11}],3:[function(require,module,exports){
 'use strict';
+
+/**
+ * Records the duration of the timeout
+ * @extends {Error}
+ */
+class TimeoutError extends Error {
+  constructor(duration, unit = 'ms') {
+    super(`Test timed out after ${duration} ${unit}`);
+    this.duration = duration;
+  }
+}
+
+class TasteTypeError extends TypeError {
+  constructor(arg, type) {
+    super(`Expected type ${type}, instead received ${typeof arg}`);
+  }
+
+  /**
+   * Does a type check on arg and makes sure it matches type
+   * throws TypeError if it does not match
+   * @param {Any} arg 
+   * @param {String} type
+   * @throws {TypeError}
+   */
+  static check(arg, type) {
+    if ( typeof arg !== type ) {
+      throw new TasteTypeError(arg, type);
+    }
+  }
+}
+
+module.exports.TimeoutError = TimeoutError;
+module.exports.TypeError = TasteTypeError;
+
+},{}],4:[function(require,module,exports){
+'use strict';
+const Errors = require('./error.js');
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const init = Symbol('init');
@@ -52,7 +89,7 @@ const execute = Symbol('execute');
 class Expectation extends Emitter {
   constructor(flavor, evaluator) {
     if ( !evaluator || typeof evaluator !== 'string' ) {
-      this.state.result = new Error(`Expected a string as an argument, but instead received ${typeof evaluator}`);
+      this.state.result = new Errors.TypeError(evaluator, 'string');
       this.state.IS_COMPLETE = true;
       return null;
     }
@@ -108,8 +145,8 @@ class Expectation extends Emitter {
       }
     });
 
-    // When the taste profile emits a value for the evaluator pass the value to the comparator
-    this.flavor.taste.profile.once(this.evaluator, (v) => {
+    // When the flavor profile emits a value for the evaluator pass the value to the comparator
+    this.flavor.profile.once(this.evaluator, (v) => {
       this.state.value = v;
       this.once('ready', () => this[execute]());
     });
@@ -123,6 +160,12 @@ class Expectation extends Emitter {
     this.state.IS_COMPLETE = true;
   }
 
+  /**
+   * Evaluator must be less than upperBound
+   * @param {Number} upperBound 
+   * @param {Boolean} closed 
+   * @returns {Flavor|NodeFlavor}
+   */
   toBeLessThan(upperBound, closed = true) {
     this.state.comparator = (v) => {
       let inRange = true;
@@ -134,6 +177,12 @@ class Expectation extends Emitter {
     return this.flavor;
   }
 
+  /**
+   * Evaluator must be greater than lowerBound
+   * @param {Number} lowerBound 
+   * @param {Boolean} closed 
+   * @returns {Flavor|NodeFlavor}
+   */
   toBeGreaterThan(lowerBound, closed = true) {
     this.state.comparator = (v) => {
       let inRange = true;
@@ -145,34 +194,52 @@ class Expectation extends Emitter {
     return this.flavor;
   }
 
-  toBeInRange(lowerBound, upperBound, param = {lower: 'closed', upper: 'closed'}) {
+  /**
+   * Evaluator must be within lowerBound and upperBound
+   * @param {Number} lowerBound 
+   * @param {Number} upperBound 
+   * @param {Object} options
+   * param.lower: 'closed' | 'open' (default: 'open')
+   * param.upper: 'closed' | 'open' (default: 'open')
+   * @returns {Flavor|NodeFlavor}
+   */
+  toBeInRange(lowerBound, upperBound, options = {lower: 'closed', upper: 'closed'}) {
     this.state.comparator = (v) => {
       let inRange = true;
-      if ( param.lower === 'closed' ) inRange = v >= lowerBound;
+      if ( options.lower === 'closed' ) inRange = v >= lowerBound;
       else inRange = v > lowerBound;
-      if ( param.upper === 'closed' ) inRange = v <= upperBound;
+      if ( options.upper === 'closed' ) inRange = v <= upperBound;
       else inRange = v < upperBound;
       return inRange;
     };
-    this.state.expectStatement = `${lowerBound} ${(param.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`;
+    this.state.expectStatement = `${lowerBound} ${(options.lower === 'closed') ? '>=' : '>'} ${this.state.evaluator} ${(param.upper === 'closed') ? '<=' : '<'} ${upperBound}`;
     return this.flavor;
   }
 
+  /**
+   * Evaluator must be a falsy value
+   * @returns {Flavor|NodeFlavor}
+   */
   toBeFalsy() {
-    this.state.comparator = (v) => { return !(v); };
+    this.state.comparator = (v) => { return !v; };
     this.state.expectStatement = `${this.state.evaluator} to be a falsy value`;
     return this.flavor;
   }
 
+  /**
+   * Evaluator must be a truthy value
+   * @returns {Flavor|NodeFlavor}
+   */
   toBeTruthy() {
-    this.state.comparator = (v) => { return (v); };
+    this.state.comparator = (v) => { return !!v; };
     this.state.expectStatement = `${this.state.evaluator} to be a truthy value`;
     return this.flavor;
   }
 
   /**
    * Evaluates loosely typed equality (==)
-   * @param {*} value 
+   * @param {Any} value 
+   * @returns {Flavor|NodeFlavor}
    */
   toBe(value) {
     this.state.comparator = (v) => { return v == value; };
@@ -182,7 +249,8 @@ class Expectation extends Emitter {
 
   /**
    * Evaluates type-strict equality (===)
-   * @param {*} value 
+   * @param {Any} value 
+   * @returns {Flavor|NodeFlavor}
    */
   toEqual(value) {
     this.state.comparator = (v) => { return v === value; };
@@ -190,6 +258,11 @@ class Expectation extends Emitter {
     return this.flavor;
   }
 
+  /**
+   * Evaluator must match the regular expression
+   * @param {RegExp} regex 
+   * @returns {Flavor|NodeFlavor}
+   */
   toMatch(regex) {
     this.state.comparator = (v) => { return v.match(regex); }
     this.state.expectStatement = `${this.state.evaluator} matches ${regex}`;
@@ -197,8 +270,9 @@ class Expectation extends Emitter {
   }
 
   /**
-   * Performs a typeof check on the value
+   * Evaluator typeof value must match type
    * @param {String} type 
+   * @returns {Flavor|NodeFlavor}
    */
   isTypeOf(type) {
     this.state.comparator = (v) => { return typeof v === type }
@@ -207,8 +281,9 @@ class Expectation extends Emitter {
   }
 
   /**
-   * Performs an instanceof check on the value
+   * Evaluator instanceof must be prototype
    * @param {Any} prototype 
+   * @returns {Flavor|NodeFlavor}
    */
   isInstanceOf(prototype) {
     this.state.comparator = (v) => { return v instanceof prototype }
@@ -251,9 +326,11 @@ class Expectation extends Emitter {
 
 module.exports = Expectation;
 
-},{"./Emitter.js":2,"./State.js":7}],4:[function(require,module,exports){
+},{"./Emitter.js":2,"./State.js":8,"./error.js":10}],5:[function(require,module,exports){
 'use strict';
+const Errors = require('./error.js');
 const Emitter = require('./Emitter.js');
+const Profile = require('./Profile.js');
 const Expectation = require('./Expectation.js');
 const State = require('./State.js');
 const init = Symbol('init');
@@ -279,6 +356,12 @@ class Flavor extends Emitter {
     });
     Object.defineProperty(this, 'expectations', {
       value: [],
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(this, 'profile', {
+      value: new Profile(),
       enumerable: true,
       writable: false,
       configurable: false
@@ -326,6 +409,7 @@ class Flavor extends Emitter {
           expect.state.IS_COMPLETE = true;
         }
       });
+      console.error(err);
       this.state.IS_COMPLETE = true;
     });
     // Stop the timer once the flavor test is complete
@@ -432,6 +516,7 @@ class Flavor extends Emitter {
   /**
    * Creates a subtree in the dom to perform a test on
    * @param {String} html
+   * @returns {Flavor}
    */
   sample(html) {
     this.state.sample = `${html}`;
@@ -442,6 +527,7 @@ class Flavor extends Emitter {
   /**
    * Defines the descriptor for the flavor
    * @param {String} s 
+   * @returns {Flavor}
    */
   describe(s) {
     this.state.description = s;
@@ -450,15 +536,17 @@ class Flavor extends Emitter {
   }
 
   /**
-   * Performs the defined test 
+   * Performs the defined test
+   * @param {Function} handler
+   * @returns {Flavor}
    */
   test(handler) {
     if ( this.isInProgress || this.isComplete ) return this;
     if ( typeof handler !== 'function' ) {
-      this.state.ERROR = new Error('Test handler is not a function');
+      this.state.ERROR = new Errors.TypeError(handler, 'function');
       return this;
     }
-
+    
     this.state.test = handler;
     this.state.IN_PROGRESS = true;
 
@@ -470,7 +558,7 @@ class Flavor extends Emitter {
         this.getElement('duration').textContent = this.state.duration;
       }
       if ( this.state.duration >= this.state.timeout ) {
-        this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
+        this.state.ERROR = new Errors.TimeoutError(this.state.timeout);
       }
     }, 1);
     
@@ -478,9 +566,9 @@ class Flavor extends Emitter {
       // Check if Taste is ready to run tests before executing the test
       this.taste.once('ready', () => {
         // Pass the sample HTML if available as an argument for the test and execute the test
-        const sample = this.getElement('sampleAsHTML');
-        if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
-        handler(sample);
+        setTimeout(() => {
+          handler(this.profile, this.getSample());
+        }, 0);
       });
     }
     catch(err) {
@@ -494,6 +582,7 @@ class Flavor extends Emitter {
    * Verifies the results of the test by comparing a value from model with value from
    * expectation
    * @param {String} arg
+   * @returns {Flavor}
    */
   expect(arg) {
     const expect = new Expectation(this, arg);
@@ -506,17 +595,25 @@ class Flavor extends Emitter {
       };
     });
 
-    const profile = this.taste.profile;
+    const profile = this.profile;
     if ( !profile.has(arg)) {
       if ( profile.hasOwnProperty(arg) ) {
         profile.emit(arg, profile[arg]);
       }
-      else this.taste.profile.set(arg, undefined, false);
+      else profile.set(arg, undefined, false);
     }
 
     this.expectations.push(expect);
     this.update();
     return expect;
+  }
+
+  finished(handler) {
+    Errors.TypeError.check(handler, 'function');
+    this.on('complete', () => {
+      handler(this.profile, this.getSample());
+    });
+    return this;
   }
 
   timeout(t) {
@@ -530,6 +627,12 @@ class Flavor extends Emitter {
     return null;
   }
 
+  getSample() {
+    const sample = this.getElement('sampleAsHTML');
+    if ( sample && !sample.getElementById ) sample.getElementById = (id) => { return sample.querySelector(`#${id}`); };
+    return sample;
+  }
+
   expectationsAreComplete() {
     for ( let i = 0; i < this.expectations.length; ++i ) {
       const expect = this.expectations[i];
@@ -539,7 +642,7 @@ class Flavor extends Emitter {
   }
 
   forEachExpectation(fn) {
-    if ( typeof fn !== 'function' ) throw new Error(`Expected a function as an argument, but instead received a type ${typeof fn}`);
+    Errors.TypeError.check(fn, 'function');
     for ( let i = 0; i < this.expectations.length; ++i ) {
       const expect = this.expectations[i];
       fn(expect);
@@ -574,10 +677,12 @@ class Flavor extends Emitter {
 
 module.exports = Flavor;
 
-},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":7}],5:[function(require,module,exports){
+},{"./Emitter.js":2,"./Expectation.js":4,"./Profile.js":7,"./State.js":8,"./error.js":10}],6:[function(require,module,exports){
 (function (process){
 'use strict';
+const Errors = require('./Error.js');
 const Emitter = require('./Emitter.js');
+const Profile = require('./Profile.js');
 const Expectation = require('./Expectation.js');
 const State = require('./State.js');
 const init = Symbol('init');
@@ -608,6 +713,12 @@ class NodeFlavor extends Emitter {
     });
     Object.defineProperty(this, 'expectations', {
       value: [],
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(this, 'profile', {
+      value: new Profile(),
       enumerable: true,
       writable: false,
       configurable: false
@@ -652,6 +763,13 @@ class NodeFlavor extends Emitter {
       }
     });
     this.on('error', (err) => {
+      this.forEachExpectation((expect) => {
+        if ( !expect.isComplete ) {
+          expect.state.result = err;
+          expect.state.IS_COMPLETE = true;
+        }
+      });
+      console.error(err);
       this.state.IS_COMPLETE = true;
     });
     // Stop the timer once the flavor test is complete
@@ -705,7 +823,7 @@ class NodeFlavor extends Emitter {
   test(handler) {
     if ( this.isInProgress || this.isComplete ) return this;
     if ( typeof handler !== 'function' ) {
-      this.state.ERROR = new Error('Test handler is not a function');
+      this.state.ERROR = new Errors.TypeError(handler, 'function');
       return this;
     }
 
@@ -717,15 +835,17 @@ class NodeFlavor extends Emitter {
     this[timeIncrementer] = setInterval(() => {
       this.state.duration = Date.now() - this.state.start;
       if ( this.state.duration >= this.state.timeout ) {
-        this.state.ERROR = new Error(`Test timed out after ${this.state.timeout} ms`);
+        this.state.ERROR = new Errors.TimeoutError(this.state.timeout);
+        // Force complete flavor expectations on timeout
         this.forEachExpectation(expect => {
           expect.state.IS_COMPLETE = true;
         });
       }
     }, 1);
     
+    // Execute the test function
     try {
-      handler();
+      handler(this.profile, null);
     }
     catch(err) {
       this.state.ERROR = err;
@@ -737,7 +857,7 @@ class NodeFlavor extends Emitter {
   /**
    * Verifies the results of the test by comparing a value from model with value from
    * expectation
-   * @param {String} arg
+   * @param {String|Any} arg
    */
   expect(arg) {
     const expect = new Expectation(this, arg);
@@ -761,16 +881,26 @@ class NodeFlavor extends Emitter {
       this.taste.printResults();
       this.state.IS_COMPLETE = true;
     });
-    const profile = this.taste.profile;
+
+    // Initialize profile fields 
+    const profile = this.profile;
     if ( !profile.has(arg)) {
       if ( profile.hasOwnProperty(arg) ) {
         profile.emit(arg, profile[arg]);
       }
-      else this.taste.profile.set(arg, undefined, false);
+      else profile.set(arg, undefined, false);
     }
     this.expectations.push(expect);
     this.update();
     return expect;
+  }
+
+  finished(handler) {
+    Errors.TypeError.check(handler, 'function');
+    this.on('complete', () => {
+      handler(profile, null);
+    });
+    return this;
   }
 
   timeout(t) {
@@ -791,7 +921,7 @@ class NodeFlavor extends Emitter {
   }
 
   forEachExpectation(fn) {
-    if ( typeof fn !== 'function' ) throw new Error(`Expected a function as an argument, but instead received a type ${typeof fn}`);
+    Errors.TypeError.check(fn, 'function');
     for ( let i = 0; i < this.expectations.length; ++i ) {
       const expect = this.expectations[i];
       fn(expect);
@@ -827,7 +957,7 @@ class NodeFlavor extends Emitter {
 module.exports = NodeFlavor;
 
 }).call(this,require('_process'))
-},{"./Emitter.js":2,"./Expectation.js":3,"./State.js":7,"_process":13}],6:[function(require,module,exports){
+},{"./Emitter.js":2,"./Error.js":3,"./Expectation.js":4,"./Profile.js":7,"./State.js":8,"_process":15}],7:[function(require,module,exports){
 'use strict';'use strict';
 const Emitter = require('./Emitter.js');
 const map = Symbol('map');
@@ -890,7 +1020,7 @@ class Profile extends Emitter {
 
 module.exports = Profile;
 
-},{"./Emitter.js":2}],7:[function(require,module,exports){
+},{"./Emitter.js":2}],8:[function(require,module,exports){
 'use strict';
 const Emitter = require('./Emitter.js');
 const map = Symbol('map');
@@ -958,9 +1088,10 @@ class State extends Emitter {
 
 module.exports = State;
 
-},{"./Emitter.js":2}],8:[function(require,module,exports){
+},{"./Emitter.js":2}],9:[function(require,module,exports){
 (function (process){
 'use strict';
+const Errors = require('./error.js');
 const Emitter = require('./Emitter.js');
 const State = require('./State.js');
 const Profile = require('./Profile.js');
@@ -969,7 +1100,6 @@ const NodeFlavor = require('./NodeFlavor.js');
 const init = Symbol('init');
 const start = Symbol('start');
 
-const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
 let instance = null;
 
 class Taste extends Emitter {
@@ -994,7 +1124,7 @@ class Taste extends Emitter {
         'root': null,
         'IS_READY': false,
         'IS_COMPLETE': false,
-        'IS_BROWSER': isBrowser
+        'IS_BROWSER': typeof window !== 'undefined' && typeof window.document !== 'undefined'
       }),
       enumerable: true,
       writable: false,
@@ -1062,6 +1192,10 @@ class Taste extends Emitter {
     return flavor;
   }
 
+  /**
+   * Saves flavor expectation results
+   * @param {Flavor|NodeFlavor} flavor 
+   */
   recordResults(flavor) {
     flavor.forEachExpectation((expect) => {
       if ( !expect.isComplete || expect.isRecorded ) return;
@@ -1147,11 +1281,13 @@ class Taste extends Emitter {
 module.exports = Taste;
 
 }).call(this,require('_process'))
-},{"./Emitter.js":2,"./Flavor.js":4,"./NodeFlavor.js":5,"./Profile.js":6,"./State.js":7,"_process":13}],9:[function(require,module,exports){
+},{"./Emitter.js":2,"./Flavor.js":5,"./NodeFlavor.js":6,"./Profile.js":7,"./State.js":8,"./error.js":10,"_process":15}],10:[function(require,module,exports){
+arguments[4][3][0].apply(exports,arguments)
+},{"dup":3}],11:[function(require,module,exports){
 'use strict';
 module.exports = require('./lib/EventEmitter.js');
 
-},{"./lib/EventEmitter.js":11}],10:[function(require,module,exports){
+},{"./lib/EventEmitter.js":13}],12:[function(require,module,exports){
 'use strict';
 const EventListener = require('./EventListener.js');
 
@@ -1280,7 +1416,7 @@ class Event {
 
 module.exports = Event;
 
-},{"./EventListener.js":12}],11:[function(require,module,exports){
+},{"./EventListener.js":14}],13:[function(require,module,exports){
 'use strict';
 const Event = require('./Event.js');
 const instances = {};
@@ -1454,7 +1590,7 @@ class EventEmitter {
 
 module.exports = EventEmitter;
 
-},{"./Event.js":10}],12:[function(require,module,exports){
+},{"./Event.js":12}],14:[function(require,module,exports){
 'use strict';
 
 class EventListener {
@@ -1493,7 +1629,7 @@ class EventListener {
 
 module.exports = EventListener;
 
-},{}],13:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -1679,9 +1815,10 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],14:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 'use strict';
 const Taste = require('../index.js');
+const Profile = require('../lib/Profile.js');
 
 function add(x,y) {
   return x + y;
@@ -1690,54 +1827,61 @@ function add(x,y) {
 function appendDiv(target) {
   const node = document.createElement('div');
   target.appendChild(node);
-}
+} 
 
 Taste.prepare('#test');
 
 Taste.flavor('Synchronous pass test')
-  .describe('Add 4 + 1')
-  .test(() => {
-    Taste.profile.addResult = add(4,1);
-    Taste.profile.addResultAgain = add(6,4);
-  })
-  .expect('addResult').toEqual(5)
-  .expect('addResultAgain').toEqual(10);
+.describe('Add 4 + 1')
+.test(profile => {
+  profile.addResult = add(4,1);
+  profile.addResultAgain = add(6,4);
+})
+.expect('addResult').toEqual(5)
+.expect('addResultAgain').toEqual(10);
 
 Taste.flavor('Synchronous fail test')
-  .describe('Add 4 + 1')
-  .test(() => {
-    Taste.profile.wrongResult = add(4,1);
-  })
-  .expect('wrongResult').toEqual(3);
+.describe('Add 4 + 1')
+.test(profile => {
+  profile.wrongResult = add(4,1);
+})
+.expect('wrongResult').toEqual(3);
 
 Taste.flavor('Asynchronous pass test')
-  .timeout(5000)
-  .describe('Resolves after 3000ms')
-  .test(() => {
-    setTimeout(() => {
-      Taste.profile.asyncResult = true;
-    }, 3000);
-  })
-  .expect('asyncResult').toBeTruthy();
+.timeout(5000)
+.describe('Resolves after 3000ms')
+.test(profile => {
+  setTimeout(() => {
+    profile.asyncResult = true;
+  }, 3000);
+})
+.expect('asyncResult').toBeTruthy();
 
 Taste.flavor('Asynchronous fail test')
-  .timeout(5000)
-  .describe('Fails after 3000ms')
-  .test(() => {
-    setTimeout(() => {
-      Taste.profile.asyncFailed = true;
-    }, 3000);
-  })
-  .expect('asyncFailed').toBeFalsy();
+.timeout(5000)
+.describe('Fails after 3000ms')
+.test(profile => {
+  setTimeout(() => {
+    profile.asyncFailed = true;
+  }, 3000);
+})
+.expect('asyncFailed').toBeFalsy();
 
 Taste.flavor('Asynchronous timeout test')
-  .describe('Test exceeds timeout')
-  .test(() => {
-    setTimeout(() => {
-      Taste.profile.asyncTimeout = true;
-    }, 3000);
-  })
-  .expect('asyncTimeout').toBeTruthy();
+.describe('Test exceeds timeout')
+.test(profile => {
+  setTimeout(() => {
+    profile.asyncTimeout = true;
+  }, 3000);
+})
+.expect('asyncTimeout').toBeTruthy();
+
+Taste.flavor('Pass Flavor profile instance to test')
+.describe('profile is the current Flavor profile in the test scope')
+.test(profile => {
+  profile.thisIsFlavor = profile instanceof Profile;
+})
+.expect('thisIsFlavor').toBeTruthy();
   
 if ( Taste.isBrowser ) {
   Taste.flavor('Taste sample dom test')
@@ -1747,12 +1891,12 @@ if ( Taste.isBrowser ) {
       <p>Sample Html Test</p>
     </section>
   `)
-  .test((sample) => {
+  .test((profile, sample) => {
     sample.innerHTML += '<p>This text was added during the test.</p>';
-    Taste.profile.childrenLength = sample.children.length;
+    profile.childrenLength = sample.children.length;
   })
   .expect('childrenLength').toBe(2);
 
 }
 
-},{"../index.js":1}]},{},[14]);
+},{"../index.js":1,"../lib/Profile.js":7}]},{},[16]);
