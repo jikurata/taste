@@ -6,6 +6,7 @@
   "repository": "https://github.com/jikurata/taste",
   "scripts": {
     "build:test": "node build/build-test.js",
+    "test:multiple": "node test/example1.test.js && node test/example2.test.js",
     "test": "node src/browser.test.js",
     "watch": "node build/exec-nodemon.js"
   },
@@ -17,11 +18,11 @@
   "author": "jikurata",
   "license": "ISC",
   "devDependencies": {
-    "browserify": "^16.2.3",
-    "fs-extra": "^8.0.1",
-    "nodemon": "^1.19.0"
+    "browserify": "^16.5.0",
+    "fs-extra": "^8.1.0",
+    "nodemon": "^1.19.4"
   },
   "dependencies": {
-    "@jikurata/events": "^2.5.3"
+    "@jikurata/events": "^3.0.1"
   }
 }

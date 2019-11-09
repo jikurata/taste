@@ -4,9 +4,9 @@ const fs = require('fs-extra');
 
 
 const files = [
-  'src/browser.test.html',
-  'src/style.css',
-  'src/browser.test.js'
+  'src/test/browser.test.html',
+  'src/test/style.css',
+  'src/test/browser.test.js'
 ];
 
 function build() {
