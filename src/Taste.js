@@ -27,7 +27,8 @@ class Taste extends EventEmitter {
 
 
     // Register events 
-    this.registerEvent('ready', {persist: true});
+    this.registerEvent('ready', {persist: true}); // Emits when Taste is done initializing; or when the dom emit 'load' for browsers
+    this.registerEvent('complete', {persist: true}); // Emits once all registered flavor tests are complete
 
     if ( this.isBrowser ) {
       // Add browser related properties
@@ -67,34 +68,57 @@ class Taste extends EventEmitter {
     const id = `flavor${this.flavors.length}`;
     const flavor = new Flavor(this, id, title);
 
-    // Handle flavor events
-    flavor.on('update', () => {
-      // Update the flavor view
-    });
-
-    // Record the flavor test results
     flavor.once('complete', () => {
       // Check if any other flavors are still incomplete
-      if ( this.areAllFlavorsComplete() ) {
-        console.log('all flavors complete');
-        const errors = [];
-        this.forAllFlavors((flavor) => {
-          // Collect the results of the flavor tests
-          console.log(flavor.getCurrentResults());
-          // Collect any errors from the flavor tests
-          if ( flavor.model.errors.length ) {
-            errors.push(flavor.model.errors);
+      if ( !this.allFlavorsAreComplete() ) {
+        return;
+      }
+      
+      // Record the flavor test results
+      const results = [];
+      this.forAllFlavors((flavor) => {
+        results.push(flavor.getCurrentResults());
+      });
+
+      let expectCount = 0;
+      let passedCount = 0;
+      let failedCount = 0;
+      let errorCount = 0;
+      let fails = [];
+      let errors = [];
+      for ( let i = 0; i < results.length; ++i ) {
+        const result = results[i];
+        for ( let j = 0; j < result.expectations.length; ++j ) {
+          ++expectCount;
+          const expect = result.expectations[j];
+          if ( !expect.result || expect.result === 'Not Tested' ) {
+            ++failedCount;
+            fails.push(expect);
           }
-
-        });
-        console.log(`There were ${errors.length} errors`);
+          else {
+            ++passedCount;
+          }
+        }
+        for ( let j = 0; j < result.errors.length; ++j ) {
+          ++errorCount;
+          errors.push(result.errors[j]);
+        }
       }
-      else {
-      }
-      // Print any errors if all flavors have completed
+      // Format the results
+      const formattedResults = {
+        'Flavors': results.length,
+        'Expectations': expectCount,
+        'Passed': passedCount,
+        'Failed': failedCount,
+        'Errors': errorCount
+      };
 
-      // Print results if all flavors have completed
+      console.log('Failed Flavors:\n', fails);
+      console.log('Errors:\n', errors);
+      console.log('Summary:\n', formattedResults);
+      this.emit('complete', results);
     });
+    
     this.flavors.push(flavor);
     return flavor;
   }
@@ -132,7 +156,7 @@ class Taste extends EventEmitter {
     }
   }
 
-  areAllFlavorsComplete() {
+  allFlavorsAreComplete() {
     for ( let i = 0; i < this.flavors.length; ++i ) {
       if ( !this.flavors[i].isComplete ) {
         return false;

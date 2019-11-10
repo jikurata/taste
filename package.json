@@ -5,9 +5,8 @@
   "main": "index.js",
   "repository": "https://github.com/jikurata/taste",
   "scripts": {
-    "build:test": "node build/build-test.js",
-    "test:multiple": "node test/example1.test.js && node test/example2.test.js",
-    "test": "node src/browser.test.js",
+    "build:example": "node build/build-example.js",
+    "test:example": "node _test/example/src/browser.test.js",
     "watch": "node build/exec-nodemon.js"
   },
   "keywords": [

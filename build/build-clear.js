@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('fs-extra');
 
-const dist = 'test/';
+const dist = '_test/example/dist';
 
 function clearBuild() {
   console.info(`Clearing built tests from ${dist}`);
@@ -9,5 +9,4 @@ function clearBuild() {
   console.info(`${dist} has been cleared.`);
 }
 
-clearBuild();
 module.exports = clearBuild;

@@ -37,7 +37,7 @@ class Expectation extends EventEmitter {
         'evaluator': evaluator,
         'comparator': null,
         'value': null,
-        'result': null
+        'result': 'Not Tested'
       }),
       enumerable: true,
       writable: false,
@@ -69,17 +69,22 @@ class Expectation extends EventEmitter {
     this.once('ready', () => {
       this.emit('evaluate')
       .then(errors => {
-        return this.emit('complete');
+        if ( !this.isComplete ) {
+          return this.emit('complete');
+        }
       })
       .catch(err => this.emit('error', err));
     });
 
     this.once('evaluate', () => {
-      this.model.result = this.model.comparator(this.model.value);
+      if ( !this.isComplete ) {
+        this.model.result = this.model.comparator(this.model.value);
+      }
     });
 
-    this.once('complete', () => {
-      
+    // Cancel the expectation if the flavor times out
+    this.flavor.once('timeout', () => {
+      this.emit('complete');
     });
 
     // Propagate errors to its Flavor
@@ -222,6 +227,7 @@ class Expectation extends EventEmitter {
 
   getCurrentResults() {
     const o = {
+      'test': this.flavor.model.title,
       'evaluator': this.model.evaluator,
       'statement': this.model.statement,
       'received': this.model.value,

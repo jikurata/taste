@@ -1,6 +1,6 @@
 'use strict';
-const Taste = require('../../index.js');
-const Profile = require('../../lib/Profile.js');
+const Taste = require('../../../index.js');
+const Profile = require('../../../src/Profile.js');
 
 function add(x,y) {
   return x + y;

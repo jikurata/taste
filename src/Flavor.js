@@ -73,6 +73,7 @@ class Flavor extends EventEmitter {
     this.registerEvent('test'); // Emits when a new test is added
     this.registerEvent('expect'); // Emits when a new expectation is added
     this.registerEvent('error');
+    this.registerEvent('timeout', {persist: true});
 
     // Execute flavor lifecycle
     this.once('ready', () => {
@@ -205,6 +206,7 @@ class Flavor extends EventEmitter {
       else if ( err instanceof TasteError.FlavorTimedOut ) {
         this.model.status = 'Error: Timed out';
         // Inspect object states to determine the reason why the timeout occurred
+        this.emit('timeout');
         this.emit('complete');
       }
     });
@@ -219,14 +221,13 @@ class Flavor extends EventEmitter {
           const html = `
           <a name="${this.id}">
             <header>
-              <h2 class="taste-flavor-title" data-flavor="title">${this.title}</h2>
+              <h2 class="taste-flavor-title" data-flavor="title"></h2>
             </header>
             <section data-flavor="content">
               <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
               <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
               <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration"></span>ms</p>
               <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout"></span>ms</p>
-              <p class="taste-flavor-content">Description: <span class="taste-flavor-description" data-flavor="description"></span></p>
               <section>
                 <p>DOM:</p>
                 <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
@@ -267,8 +268,8 @@ class Flavor extends EventEmitter {
       else sampleAsText.textContent = sampleAsHTML.innerHTML;
 
       // Update the view
-      this.getElement('status').textContent = this.model.status;
       this.getElement('title').textContent = this.model.title;
+      this.getElement('status').textContent = this.model.status;
       this.getElement('timeout').textContent = this.model.timeout;
       this.getElement('description').textContent = this.model.description;
       this.getElement('test').textContent = this.testToString();
