@@ -284,6 +284,10 @@ require('test2.js');
 
 ## Version Log
 ---
+### v1.0.1
+- Implemented Taste.finished() to expose the object containing the comprehensive results of the taste tests.
+ 
+
 ### v1.0.0
 - Taste changes
     - Now emits complete when all Flavors are complete
