@@ -205,3 +205,5 @@ Taste('Get the results of the test once the flavor is complete')
 .expect('tests').toBeComparative(v => Array.isArray(v))
 .expect('expectations').toBeComparative(v => Array.isArray(v))
 .expect('errors').toBeComparative(v => Array.isArray(v));
+
+module.exports = Taste;

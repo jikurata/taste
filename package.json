@@ -9,6 +9,8 @@
     "test:example": "node _test/example/src/browser.test.js",
     "test:flavor": "node _test/flavor.test.js",
     "test:expect": "node _test/expectation.test.js",
+    "test:taste": "node _test/taste.test.js",
+    "test": "node _test/test.js",
     "watch": "node build/exec-nodemon.js"
   },
   "keywords": [

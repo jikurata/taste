@@ -6,13 +6,22 @@ const Flavor = require('./Flavor.js');
 let instance = null;
 
 class Taste extends EventEmitter {  
-  constructor() {
-    if ( instance ) {
+  constructor(options = {}) {
+    // If test is true, do not use the singleton pattern
+    if ( !options.test && instance ) {
       return instance;
     }
     super();
-    instance = this;
+    if ( !options.test ) {
+      instance = this;
+    }
     Object.defineProperty(this, 'flavors', {
+      value: [],
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(this, 'errors', {
       value: [],
       enumerable: true,
       writable: false,
@@ -24,11 +33,73 @@ class Taste extends EventEmitter {
       writable: false,
       configurable: false,
     });
+    Object.defineProperty(this, 'testMode', {
+      value: !(process && process.version && process.versions && process.versions.node),
+      enumerable: true,
+      writable: false,
+      configurable: false,
+    });
 
 
     // Register events 
     this.registerEvent('ready', {persist: true}); // Emits when Taste is done initializing; or when the dom emit 'load' for browsers
     this.registerEvent('complete', {persist: true}); // Emits once all registered flavor tests are complete
+    this.registerEvent('error');
+    
+    // Print the flavor test results
+    this.once('complete', (results) => {
+      // Don't print if in in test mode
+      if ( options.test ) {
+        return;
+      }
+      let expectCount = 0;
+      let passedCount = 0;
+      let failedCount = 0;
+      let errorCount = 0;
+      let fails = [];
+      let errors = this.errors;
+      for ( let i = 0; i < results.length; ++i ) {
+        const result = results[i];
+        for ( let j = 0; j < result.expectations.length; ++j ) {
+          ++expectCount;
+          const expect = result.expectations[j];
+          if ( !expect.result || expect.result === 'Not Tested' ) {
+            ++failedCount;
+            fails.push(expect);
+          }
+          else {
+            ++passedCount;
+          }
+        }
+        for ( let j = 0; j < result.errors.length; ++j ) {
+          ++errorCount;
+          errors.push(result.errors[j]);
+        }
+      }
+      // Format the results
+      const formattedResults = {
+        'Flavors': results.length,
+        'Expectations': expectCount,
+        'Passed': passedCount,
+        'Failed': failedCount,
+        'Errors': errorCount
+      };
+
+      if ( fails.length ) {
+        console.log('Failed Flavors:\n', fails);
+      }
+      if ( errors.length ) {
+        console.log('Errors:\n', errors);
+      }
+      console.log('Summary:\n', formattedResults);
+    });
+
+    this.on('error', err => {
+      this.errors.push(err);
+      if ( !this.isComplete ) {
+        this.emit('complete', this.getCurrentResults());
+      }
+    });
 
     if ( this.isBrowser ) {
       // Add browser related properties
@@ -69,58 +140,14 @@ class Taste extends EventEmitter {
     const flavor = new Flavor(this, id, title);
 
     flavor.once('complete', () => {
-      // Check if any other flavors are still incomplete
-      if ( !this.allFlavorsAreComplete() ) {
-        return;
-      }
-      
-      // Record the flavor test results
-      const results = [];
-      this.forAllFlavors((flavor) => {
-        results.push(flavor.getCurrentResults());
-      });
-
-      let expectCount = 0;
-      let passedCount = 0;
-      let failedCount = 0;
-      let errorCount = 0;
-      let fails = [];
-      let errors = [];
-      for ( let i = 0; i < results.length; ++i ) {
-        const result = results[i];
-        for ( let j = 0; j < result.expectations.length; ++j ) {
-          ++expectCount;
-          const expect = result.expectations[j];
-          if ( !expect.result || expect.result === 'Not Tested' ) {
-            ++failedCount;
-            fails.push(expect);
-          }
-          else {
-            ++passedCount;
-          }
+      if ( !this.isComplete ) {
+        // Check if any other flavors are still incomplete
+        if ( !this.allFlavorsAreComplete() ) {
+          return;
         }
-        for ( let j = 0; j < result.errors.length; ++j ) {
-          ++errorCount;
-          errors.push(result.errors[j]);
-        }
+        // Taste is done once all registered flavors are finished
+        this.emit('complete', this.getCurrentResults());
       }
-      // Format the results
-      const formattedResults = {
-        'Flavors': results.length,
-        'Expectations': expectCount,
-        'Passed': passedCount,
-        'Failed': failedCount,
-        'Errors': errorCount
-      };
-
-      if ( fails.length ) {
-        console.log('Failed Flavors:\n', fails);
-      }
-      if ( errors.length ) {
-        console.log('Errors:\n', errors);
-      }
-      console.log('Summary:\n', formattedResults);
-      this.emit('complete', results);
     });
 
     this.flavors.push(flavor);
@@ -128,26 +155,15 @@ class Taste extends EventEmitter {
   }
 
   /**
-   * Returns an object containing details about each Flavor
+   * Returns a Result object containing details about each Flavor
    * @returns {Object}
    */
   getCurrentResults() {
-    const length = this.flavors.length;
-    const o = {
-      'flavorCount': length,
-      'expectationCount': 0,
-      'passed': 0,
-      'failed': 0,
-      'error': 0,
-      'elapsedTime': 0
-    };
-    for ( let i = 0; i < length; ++i ) {
-      const flavor = this.flavors[i];
-      flavor.forEachExpectation(expect => {
-        expect
-      });
-    }
-    return o;
+    const results = [];
+    this.forAllFlavors((flavor) => {
+      results.push(flavor.getCurrentResults());
+    });
+    return results;
   }
   
   forAllFlavors(fn) {
@@ -171,6 +187,9 @@ class Taste extends EventEmitter {
 
   get isReady() {
     return this.getEvent('ready').hasEmittedAtLeastOnce;
+  }
+  get isComplete() {
+    return this.getEvent('complete').hasEmittedAtLeastOnce;
   }
 }
 
