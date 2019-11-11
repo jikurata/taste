@@ -6,11 +6,6 @@ function add(x,y) {
   return x + y;
 }
 
-function appendDiv(target) {
-  const node = document.createElement('div');
-  target.appendChild(node);
-} 
-
 Taste.prepare('#test');
 
 Taste('Synchronous pass test')

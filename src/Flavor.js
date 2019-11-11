@@ -111,7 +111,8 @@ class Flavor extends EventEmitter {
             this.update();
             return this.emit('complete', this.getCurrentResults());
           }
-        });
+        })
+        .then(() => this.update());
       }
       catch(err) {
         this.emit('error', err);
@@ -150,7 +151,7 @@ class Flavor extends EventEmitter {
       try {
         const runTest = () => {
           setTimeout(() => {
-            test.run(this.profile)
+            test.run(this.profile, this.model.sample)
             .then(() => {
               ++this.model.completedTests;
             })
@@ -237,6 +238,9 @@ class Flavor extends EventEmitter {
         this.model.status = 'Error: Timed out';
         // Inspect object states to determine the reason why the timeout occurred
       }
+      else {
+        this.model.status = "Error";
+      }
       this.model.errors.push(err);
       if ( !this.isComplete ) {
         this.emit('complete', this.getCurrentResults());
@@ -257,7 +261,6 @@ class Flavor extends EventEmitter {
             </header>
             <section data-flavor="content">
               <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
-              <h3 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result"></span></h3>
               <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration"></span>ms</p>
               <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout"></span>ms</p>
               <section>
@@ -265,9 +268,12 @@ class Flavor extends EventEmitter {
                 <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
                 <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
               </section>
-              <p class="taste-flavor-content">Test: <span class="taste-flavor-test" data-flavor="test"></span></p>
               <div class="taste-flavor-content">
-                Expectations:
+                <h4>Test:</h4>
+                <ul data-flavor="test"></ul>
+              </div>
+              <div class="taste-flavor-content">
+                <h4>Expectation:</h4>
                 <section class="taste-flavor-expectation" data-flavor="expectation"></section>
               </div>
             </section>
@@ -281,14 +287,15 @@ class Flavor extends EventEmitter {
     }
   }
 
+  /**
+   * If in browser, updates the current view
+   */
   update() {
     if ( !this.isReady ) {
       return;
     }
 
-    // Update the status state
-    
-    if ( this.isBrowser ) {
+    if ( this.isBrowser  && this.model.rootElement ) {
       // Update the sample
       const sampleAsHTML = this.getElement('sampleAsHTML');
       const sampleAsText = this.getElement('sampleAsText');
@@ -302,25 +309,35 @@ class Flavor extends EventEmitter {
       this.getElement('title').textContent = this.model.title;
       this.getElement('status').textContent = this.model.status;
       this.getElement('timeout').textContent = this.model.timeout;
-      this.getElement('description').textContent = this.model.description;
-      this.getElement('test').textContent = this.testToString();
-      const results = [];
-      this.getElement('expectation').innerHTML = '';
+
+      let testHtml = '';
+      // Print test sources
+      for ( let i = 0; i < this.tests.length; ++i ) {
+        const test = this.tests[i];
+        testHtml +=`
+          <li class="taste-flavor-test">
+            <p class="taste-flavor-test-description">Description: ${test.description}</p>
+            <p class="taste-flavor-test-source">${test.handler.toString()}</p>
+          </li>
+        `;
+      }
+      this.getElement('test').innerHTML = testHtml;
+
+      // Print expectations
+      let expectHtml = '';
       this.forEachExpectation((expect) => {
-        let received = '';
+        expectHtml += `
+        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.model.statement}</span></p>
+        <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${expect.model.evaluator} = ${expect.model.value}</span></p>
+        `;
         if ( expect.isComplete ) {
-          results.push(expect.result);
-          received = `${expect.evaluator} = ${expect.value}`;
+          const result = expect.model.result;
+          let s = (result === true) ? 'Passed' : (typeof result === 'string') ? result : 'Failed';
+          expectHtml += `<h4 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result">${s}</span></h4>`
         }
-        else if ( this.model.ERROR ) {
-          results.push(this.model.ERROR);
-        }
-        const html = `
-        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.expression}</span></p>
-        <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${received}</span></p>`;
-        this.getElement('expectation').innerHTML += html;
+
       });
-      this.getElement('result').textContent = results.join(' ');
+      this.getElement('expectation').innerHTML = expectHtml;
     }
   }
   
@@ -334,8 +351,17 @@ class Flavor extends EventEmitter {
       if ( !this.taste.isReady ) {
         this.taste.once('ready', () => this.sample(html));
       }
-      // Do stuff to initialize the sample
+      // Create a view for the sample
+      const sampleRoot = document.createElement('article');
+      sampleRoot.className = '';
+      sampleRoot.innerHTML = html;
 
+      // Append document methods to sample
+      sampleRoot.getElementById = (id) => {
+        return sampleRoot.querySelector(`#${id}`);
+      };
+
+      this.model.sample = sampleRoot;
       this.update();
     }
     else {
@@ -518,12 +544,12 @@ class Flavor extends EventEmitter {
   }
 
   getElement(s) {
-    if ( this.taste.rootElement ) return this.model.rootElement.querySelector(`[data-flavor="${s}"]`);
-    return null;
+    return this.model.rootElement.querySelector(`[data-flavor="${s}"]`);
   }
 
   getCurrentResults() {
     const o = {
+      'id': this.id,
       'title': this.model.title,
       'status': this.model.status,
       'duration': this.model.duration,

@@ -45,6 +45,11 @@ class Taste extends EventEmitter {
     this.registerEvent('ready', {persist: true}); // Emits when Taste is done initializing; or when the dom emit 'load' for browsers
     this.registerEvent('complete', {persist: true}); // Emits once all registered flavor tests are complete
     this.registerEvent('error');
+
+    // Record start time
+    this.once('ready', () => {
+      this.start = Date.now();
+    });
     
     // Print the flavor test results
     this.once('complete', (results) => {
@@ -55,14 +60,13 @@ class Taste extends EventEmitter {
       let expectCount = 0;
       let passedCount = 0;
       let failedCount = 0;
-      let errorCount = 0;
       let fails = [];
       let errors = this.errors;
       for ( let i = 0; i < results.length; ++i ) {
         const result = results[i];
         for ( let j = 0; j < result.expectations.length; ++j ) {
-          ++expectCount;
           const expect = result.expectations[j];
+          ++expectCount;
           if ( !expect.result || expect.result === 'Not Tested' ) {
             ++failedCount;
             fails.push(expect);
@@ -72,7 +76,6 @@ class Taste extends EventEmitter {
           }
         }
         for ( let j = 0; j < result.errors.length; ++j ) {
-          ++errorCount;
           errors.push(result.errors[j]);
         }
       }
@@ -82,7 +85,7 @@ class Taste extends EventEmitter {
         'Expectations': expectCount,
         'Passed': passedCount,
         'Failed': failedCount,
-        'Errors': errorCount
+        'Errors': errors.length
       };
 
       if ( fails.length ) {
@@ -92,6 +95,57 @@ class Taste extends EventEmitter {
         console.log('Errors:\n', errors);
       }
       console.log('Summary:\n', formattedResults);
+
+      // Add additional summary views if in a browser
+      if ( this.isBrowser ) {
+        // Create a table of contents
+        const nav = document.createElement('nav');
+        nav.className = 'taste-navigation';
+        let passedLinks = []; // array of hyperlinks to each passed test
+        let failedLinks = []; // array of hyperlinks to each failed test
+        for ( let i = 0; i < results.length; ++i ) {
+          const result = results[i];
+          for ( let j = 0; j < result.expectations.length; ++j ) {
+            const expect = result.expectations[j];
+            let a = (expect.result === true) ? passedLinks : failedLinks;
+            a.push(`<li class="taste-summary-navigation-item"><a class="taste-summary-navigation-link" href="#${result.id}">${a.length + 1}. ${result.title}</a></li>`);
+          }
+        }
+
+        // Create a view for any errors
+        let errorList = [];
+        for ( let i = 0; i < errors.length; ++i ) {
+          errorList.push(`
+          <li class="taste-summary-error-item">
+            ${errors[i]}
+          </li>
+          `);
+        }
+
+        // Create the summary view
+        const node = document.createElement('section');
+        node.className = 'taste-summary';
+        node.innerHTML = `
+          <h2 class="taste-summary-title">Summary:</h2>
+          <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${results.elapsedTime}ms</span></p>
+          <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${results.length}</span></p>
+          <p class="taste-summary-content">Number of Expectations: <span class="taste-summary-count" data-taste="expectCount">${expectCount}</span></p>
+          <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${passedCount}/${expectCount}</span></p>
+          <ul class="taste-summary-passed-list">
+            ${passedLinks.join('')}
+          </ul>
+          <p class="taste-summary-content">Failed: <span class="taste-summary-failed"  data-taste="failed">${failedCount}/${expectCount}</span></p>
+          <ul class="taste-summary-failed-list">
+            ${failedLinks.join('')}
+          </ul>
+          <p class="taste-summary-content">Errors: <span class="taste-summary-errors" data-taste="errors">${errors.length}</span></p>
+          <ul class="taste-summary-error-list">
+            ${errorList.join('')}
+          </ul>          
+        `;
+        this.rootElement.appendChild(node.cloneNode(true));
+        this.rootElement.insertAdjacentElement('afterbegin', node.cloneNode(true));
+      }
     });
 
     this.on('error', err => {
@@ -126,7 +180,10 @@ class Taste extends EventEmitter {
         return this.once('ready', () => this.prepare(querySelector));
       }
       const el = document.querySelector(querySelector);
-      // Throw if el is null
+      if ( !el ) {
+        return this.emit('error', new TasteError.ElementNotFound(querySelector));
+      }
+      this.rootElement = el;
     }
   }
 
@@ -163,6 +220,7 @@ class Taste extends EventEmitter {
     this.forAllFlavors((flavor) => {
       results.push(flavor.getCurrentResults());
     });
+    results.elapsedTime = Date.now() - this.start;
     return results;
   }
   

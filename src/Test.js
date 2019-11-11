@@ -30,14 +30,15 @@ class Test extends EventEmitter {
 
   /**
    * Run the test handler
-   * @param {Profile} profile 
+   * @param {Profile} profile
+   * @param {Element} sample
    * @returns {Promise<Void>}
    */
-  run(profile) {
+  run(profile, sample) {
     return new Promise((resolve, reject) => {
       try {
         this.emit('start');
-        const returnValue = this.handler(profile)
+        const returnValue = this.handler(profile, sample)
         if ( returnValue instanceof Promise ) {
           returnValue.then(() => resolve())
           .catch(err => {

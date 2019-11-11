@@ -11,4 +11,3 @@ function prepare(querySelector) {
 }
 module.exports = flavor;
 module.exports.prepare = prepare;
-module.exports.prepare = taste.prepare;

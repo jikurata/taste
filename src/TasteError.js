@@ -72,7 +72,14 @@ class EnvironmentNotBrowser extends Error {
   }
 }
 
+class ElementNotFound extends Error {
+  constructor(selector) {
+    super(`Element Not Found: Could not find an element with the queryselector ${selector}`);
+  }
+}
+
 module.exports.TypeError = TasteTypeError;
 module.exports.FlavorTimedOut = FlavorTimedOut;
 module.exports.ImmutableProfileValue = ImmutableProfileValue;
 module.exports.EnvironmentNotBrowser = EnvironmentNotBrowser;
+module.exports.ElementNotFound = ElementNotFound;
