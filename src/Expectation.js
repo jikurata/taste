@@ -147,8 +147,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toEqual(value) {
-    this.toBeComparative(v => v === value, `${this.model.evaluator} === ${value}`);
-    return this.flavor;
+    return this.toBeComparative(v => v === value, `${this.model.evaluator} === ${value}`);
   }
 
   /**
@@ -157,8 +156,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBe(value) {
-    this.toBeComparative(v => v == value, `${this.model.evaluator} == ${value}`);
-    return this.flavor;
+    return this.toBeComparative(v => v == value, `${this.model.evaluator} == ${value}`);
   }
 
   /**
@@ -166,8 +164,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeArray() {
-    this.toBeComparative(v => Array.isArray(v), `${this.model.evaluator} is an Array`);
-    return this.flavor;
+    return this.toBeComparative(v => Array.isArray(v), `${this.model.evaluator} is an Array`);
   }
 
   /**
@@ -175,7 +172,7 @@ class Expectation extends EventEmitter {
    * @param {String|Array<String>} value 
    */
   toHaveProperty(value) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       if ( !value ) {
         return false;
       }
@@ -189,7 +186,6 @@ class Expectation extends EventEmitter {
       }
       return true;
     }, `${this.model.evaluator} has ${(value.length > 1) ? 'properties' : 'property'} ${value}`);
-    return this.flavor;
   }
 
   /**
@@ -199,13 +195,12 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeGreaterThan(lowerBound, closed = true) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       let inRange = true;
       if ( closed ) inRange = v >= lowerBound;
       else inRange = v > lowerBound;
       return inRange;
     }, `${lowerBound} ${(closed) ? '>=' : '>'} ${this.model.evaluator}`);
-    return this.flavor;
   }
 
   /**
@@ -215,13 +210,12 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeLessThan(upperBound, closed = true) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       let inRange = true;
       if ( closed ) inRange = v <= upperBound;
       else inRange = v < upperBound;
       return inRange;
     }, `${this.model.evaluator} ${(closed) ? '<=' : '<'} ${upperBound}`);
-    return this.flavor;
   }
 
   /**
@@ -234,7 +228,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeInRange(lowerBound, upperBound, options = {lower: 'open', upper: 'open'}) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       let inRange = true;
       if ( options.lower === 'closed' && options.upper === 'closed' ) {
         inRange = v >= lowerBound && v <= upperBound;
@@ -250,7 +244,6 @@ class Expectation extends EventEmitter {
       }
       return inRange;
     }, `${lowerBound} ${(options.lower === 'closed') ? '>=' : '>'} ${this.model.evaluator} ${(options.upper === 'closed') ? '<=' : '<'} ${upperBound}`);
-    return this.flavor;
   }
 
   /**
@@ -258,8 +251,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeFalsy() {
-    this.toBeComparative(v => { return !v; }, `${this.model.evaluator} to be a falsy value`);
-    return this.flavor;
+    return this.toBeComparative(v => { return !v; }, `${this.model.evaluator} to be a falsy value`);
   }
 
   /**
@@ -267,8 +259,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeTruthy() {
-    this.toBeComparative(v => { return !!v; }, `${this.model.evaluator} to be a truthy value`);
-    return this.flavor;
+    return this.toBeComparative(v => { return !!v; }, `${this.model.evaluator} to be a truthy value`);
   }
 
   /**
@@ -277,8 +268,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toMatch(regex) {
-    this.toBeComparative(v => { return new RegExp(regex).test(v); }, `${this.model.evaluator} matches ${regex}`);
-    return this.flavor;
+    return this.toBeComparative(v => { return new RegExp(regex).test(v); }, `${this.model.evaluator} matches ${regex}`);
   }
 
   /**
@@ -287,8 +277,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeTypeOf(type) {
-    this.toBeComparative(v => { return typeof v === type }, `${this.model.evaluator} is a ${type}`);
-    return this.flavor;
+    return this.toBeComparative(v => { return typeof v === type }, `${this.model.evaluator} is a ${type}`);
   }
 
   /**
@@ -298,10 +287,9 @@ class Expectation extends EventEmitter {
    */
   toBeInstanceOf(obj) {
     const className = ( obj.hasOwnProperty('prototype') ) ? obj.prototype.constructor.name : `${obj.prototype}`;
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       return v instanceof obj;
     }, `${this.model.evaluator} is an instance of ${className.replace(/\{[\s\S]*\}/g, '')}`);
-    return this.flavor;
   }
 
   getCurrentResults() {
