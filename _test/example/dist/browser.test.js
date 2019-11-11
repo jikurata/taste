@@ -81,8 +81,14 @@ function flavor(title) {
 function prepare(querySelector) {
   return taste.prepare(querySelector);
 }
+
+function finished(handler) {
+  return taste.finished(handler);
+}
+
 module.exports = flavor;
 module.exports.prepare = prepare;
+module.exports.finished = finished;
 
 },{"./src/Taste.js":13}],3:[function(require,module,exports){
 'use strict';
@@ -853,8 +859,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toEqual(value) {
-    this.toBeComparative(v => v === value, `${this.model.evaluator} === ${value}`);
-    return this.flavor;
+    return this.toBeComparative(v => v === value, `${this.model.evaluator} === ${value}`);
   }
 
   /**
@@ -863,8 +868,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBe(value) {
-    this.toBeComparative(v => v == value, `${this.model.evaluator} == ${value}`);
-    return this.flavor;
+    return this.toBeComparative(v => v == value, `${this.model.evaluator} == ${value}`);
   }
 
   /**
@@ -872,16 +876,15 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeArray() {
-    this.toBeComparative(v => Array.isArray(v), `${this.model.evaluator} is an Array`);
-    return this.flavor;
+    return this.toBeComparative(v => Array.isArray(v), `${this.model.evaluator} is an Array`);
   }
 
   /**
    * Check if the test value has the provided property or array of properties
    * @param {String|Array<String>} value 
    */
-  hasOwnProperty(value) {
-    this.toBeComparative(v => {
+  toHaveProperty(value) {
+    return this.toBeComparative(v => {
       if ( !value ) {
         return false;
       }
@@ -895,7 +898,6 @@ class Expectation extends EventEmitter {
       }
       return true;
     }, `${this.model.evaluator} has ${(value.length > 1) ? 'properties' : 'property'} ${value}`);
-    return this.flavor;
   }
 
   /**
@@ -905,13 +907,12 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeGreaterThan(lowerBound, closed = true) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       let inRange = true;
       if ( closed ) inRange = v >= lowerBound;
       else inRange = v > lowerBound;
       return inRange;
     }, `${lowerBound} ${(closed) ? '>=' : '>'} ${this.model.evaluator}`);
-    return this.flavor;
   }
 
   /**
@@ -921,13 +922,12 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeLessThan(upperBound, closed = true) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       let inRange = true;
       if ( closed ) inRange = v <= upperBound;
       else inRange = v < upperBound;
       return inRange;
     }, `${this.model.evaluator} ${(closed) ? '<=' : '<'} ${upperBound}`);
-    return this.flavor;
   }
 
   /**
@@ -940,7 +940,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeInRange(lowerBound, upperBound, options = {lower: 'open', upper: 'open'}) {
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       let inRange = true;
       if ( options.lower === 'closed' && options.upper === 'closed' ) {
         inRange = v >= lowerBound && v <= upperBound;
@@ -956,7 +956,6 @@ class Expectation extends EventEmitter {
       }
       return inRange;
     }, `${lowerBound} ${(options.lower === 'closed') ? '>=' : '>'} ${this.model.evaluator} ${(options.upper === 'closed') ? '<=' : '<'} ${upperBound}`);
-    return this.flavor;
   }
 
   /**
@@ -964,8 +963,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeFalsy() {
-    this.toBeComparative(v => { return !v; }, `${this.model.evaluator} to be a falsy value`);
-    return this.flavor;
+    return this.toBeComparative(v => { return !v; }, `${this.model.evaluator} to be a falsy value`);
   }
 
   /**
@@ -973,8 +971,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeTruthy() {
-    this.toBeComparative(v => { return !!v; }, `${this.model.evaluator} to be a truthy value`);
-    return this.flavor;
+    return this.toBeComparative(v => { return !!v; }, `${this.model.evaluator} to be a truthy value`);
   }
 
   /**
@@ -983,8 +980,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toMatch(regex) {
-    this.toBeComparative(v => { return new RegExp(regex).test(v); }, `${this.model.evaluator} matches ${regex}`);
-    return this.flavor;
+    return this.toBeComparative(v => { return new RegExp(regex).test(v); }, `${this.model.evaluator} matches ${regex}`);
   }
 
   /**
@@ -993,8 +989,7 @@ class Expectation extends EventEmitter {
    * @returns {Flavor}
    */
   toBeTypeOf(type) {
-    this.toBeComparative(v => { return typeof v === type }, `${this.model.evaluator} is a ${type}`);
-    return this.flavor;
+    return this.toBeComparative(v => { return typeof v === type }, `${this.model.evaluator} is a ${type}`);
   }
 
   /**
@@ -1004,10 +999,9 @@ class Expectation extends EventEmitter {
    */
   toBeInstanceOf(obj) {
     const className = ( obj.hasOwnProperty('prototype') ) ? obj.prototype.constructor.name : `${obj.prototype}`;
-    this.toBeComparative(v => {
+    return this.toBeComparative(v => {
       return v instanceof obj;
     }, `${this.model.evaluator} is an instance of ${className.replace(/\{[\s\S]*\}/g, '')}`);
-    return this.flavor;
   }
 
   getCurrentResults() {
@@ -1124,30 +1118,30 @@ class Flavor extends EventEmitter {
     this.once('ready', () => {
       try {
         this.model.status = 'Preparing';
-        this.update();
+        this.emit('update');
         this.emit('before', this.profile)
         .then(errors => {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'In Progress';
-            this.update();
+            this.emit('update');
             return this.emit('start');
           }
         })
         .then(errors => {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'Resolving';
-            this.update();
+            this.emit('update');
             return this.emit('after', this.profile);
           }
         })
         .then(errors => {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'Complete';
-            this.update();
+            this.emit('update');
             return this.emit('complete', this.getCurrentResults());
           }
         })
-        .then(() => this.update());
+        .then(() => this.emit('update'));
       }
       catch(err) {
         this.emit('error', err);
@@ -1257,7 +1251,7 @@ class Flavor extends EventEmitter {
           clearInterval(this.model.timeoutRef);
           this.model._set('timeoutRef', null, false);
         }
-        this.update();
+        this.emit('update');
       }
       catch(err) {
         this.emit('error', err);
@@ -1279,6 +1273,58 @@ class Flavor extends EventEmitter {
       this.model.errors.push(err);
       if ( !this.isComplete ) {
         this.emit('complete', this.getCurrentResults());
+      }
+    });
+
+    // Update the view if in browser
+    this.on('update', () => {
+      if ( !this.isReady ) {
+        return;
+      }
+  
+      if ( this.isBrowser  && this.model.rootElement ) {
+        // Update the sample
+        const sampleAsHTML = this.getElement('sampleAsHTML');
+        const sampleAsText = this.getElement('sampleAsText');
+        const sampleRoot = sampleAsHTML.children[0];
+    
+        // Only overwrite innerHTML of sampleAsHTML when there is no sample root
+        if ( !sampleRoot ) sampleAsHTML.innerHTML = this.model.sample;
+        else sampleAsText.textContent = sampleAsHTML.innerHTML;
+  
+        // Update the view
+        this.getElement('title').textContent = this.model.title;
+        this.getElement('status').textContent = this.model.status;
+        this.getElement('timeout').textContent = this.model.timeout;
+  
+        let testHtml = '';
+        // Print test sources
+        for ( let i = 0; i < this.tests.length; ++i ) {
+          const test = this.tests[i];
+          testHtml +=`
+            <li class="taste-flavor-test">
+              <p class="taste-flavor-test-description">Description: ${test.description}</p>
+              <p class="taste-flavor-test-source">${test.handler.toString()}</p>
+            </li>
+          `;
+        }
+        this.getElement('test').innerHTML = testHtml;
+  
+        // Print expectations
+        let expectHtml = '';
+        this.forEachExpectation((expect) => {
+          expectHtml += `
+          <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.model.statement}</span></p>
+          <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${expect.model.evaluator} = ${expect.model.value}</span></p>
+          `;
+          if ( expect.isComplete ) {
+            const result = expect.model.result;
+            let s = (result === true) ? 'Passed' : (typeof result === 'string') ? result : 'Failed';
+            expectHtml += `<h4 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result">${s}</span></h4>`
+          }
+  
+        });
+        this.getElement('expectation').innerHTML = expectHtml;
       }
     });
 
@@ -1321,60 +1367,6 @@ class Flavor extends EventEmitter {
       });
     }
   }
-
-  /**
-   * If in browser, updates the current view
-   */
-  update() {
-    if ( !this.isReady ) {
-      return;
-    }
-
-    if ( this.isBrowser  && this.model.rootElement ) {
-      // Update the sample
-      const sampleAsHTML = this.getElement('sampleAsHTML');
-      const sampleAsText = this.getElement('sampleAsText');
-      const sampleRoot = sampleAsHTML.children[0];
-  
-      // Only overwrite innerHTML of sampleAsHTML when there is no sample root
-      if ( !sampleRoot ) sampleAsHTML.innerHTML = this.model.sample;
-      else sampleAsText.textContent = sampleAsHTML.innerHTML;
-
-      // Update the view
-      this.getElement('title').textContent = this.model.title;
-      this.getElement('status').textContent = this.model.status;
-      this.getElement('timeout').textContent = this.model.timeout;
-
-      let testHtml = '';
-      // Print test sources
-      for ( let i = 0; i < this.tests.length; ++i ) {
-        const test = this.tests[i];
-        testHtml +=`
-          <li class="taste-flavor-test">
-            <p class="taste-flavor-test-description">Description: ${test.description}</p>
-            <p class="taste-flavor-test-source">${test.handler.toString()}</p>
-          </li>
-        `;
-      }
-      this.getElement('test').innerHTML = testHtml;
-
-      // Print expectations
-      let expectHtml = '';
-      this.forEachExpectation((expect) => {
-        expectHtml += `
-        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.model.statement}</span></p>
-        <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${expect.model.evaluator} = ${expect.model.value}</span></p>
-        `;
-        if ( expect.isComplete ) {
-          const result = expect.model.result;
-          let s = (result === true) ? 'Passed' : (typeof result === 'string') ? result : 'Failed';
-          expectHtml += `<h4 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result">${s}</span></h4>`
-        }
-
-      });
-      this.getElement('expectation').innerHTML = expectHtml;
-    }
-  }
   
   /**
    * Creates a subtree in the dom to perform a test on
@@ -1397,7 +1389,7 @@ class Flavor extends EventEmitter {
       };
 
       this.model.sample = sampleRoot;
-      this.update();
+      this.emit('update');
     }
     else {
       // Skip the flavor test if not in a browser
@@ -1424,7 +1416,7 @@ class Flavor extends EventEmitter {
       this.tests.push(test);
       // Emit that a test has been added
       this.emit('test', test);
-      this.update();
+      this.emit('update');
       return this;
     }
     catch(err) {
@@ -1444,7 +1436,7 @@ class Flavor extends EventEmitter {
       // When all expectations are complete, then the flavor's state is complete
       expect.once('complete', () => {
         // Retrieve expectation results
-        this.update();
+        this.emit('update');
         ++this.model.completedExpectations;
       });
   
@@ -1463,7 +1455,7 @@ class Flavor extends EventEmitter {
       this.expectations.push(expect);
       // Emit that an expectation has been added
       this.emit('expect', expect);
-      this.update();
+      this.emit('update');
       return expect;
     }
     catch(err) {
@@ -1480,7 +1472,7 @@ class Flavor extends EventEmitter {
   timeout(t) {
     try {
       this.model.timeout = t;
-      this.update();
+      this.emit('update');
       return this;
     }
     catch(err) {
@@ -1589,10 +1581,15 @@ class Flavor extends EventEmitter {
       'status': this.model.status,
       'duration': this.model.duration,
       'timeout': this.model.timeout,
-      'tests': this.tests,
+      'tests': [],
       'expectations': [],
       'errors': this.model.errors
     }
+
+    for ( let i = 0; i < this.tests.length; ++i ) {
+      o.tests.push(this.tests[i].toObject());
+    }
+    
     this.forEachExpectation((expect) => {
       o.expectations.push(expect.getCurrentResults());
     });
@@ -1763,13 +1760,6 @@ class Taste extends EventEmitter {
       writable: false,
       configurable: false,
     });
-    Object.defineProperty(this, 'testMode', {
-      value: !(process && process.version && process.versions && process.versions.node),
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
-
 
     // Register events 
     this.registerEvent('ready', {persist: true}); // Emits when Taste is done initializing; or when the dom emit 'load' for browsers
@@ -1782,7 +1772,7 @@ class Taste extends EventEmitter {
     });
     
     // Print the flavor test results
-    this.once('complete', (results) => {
+    this.once('complete', (result) => {
       // Don't print if in in test mode
       if ( options.test ) {
         return;
@@ -1792,10 +1782,10 @@ class Taste extends EventEmitter {
       let failedCount = 0;
       let fails = [];
       let errors = this.errors;
-      for ( let i = 0; i < results.length; ++i ) {
-        const result = results[i];
-        for ( let j = 0; j < result.expectations.length; ++j ) {
-          const expect = result.expectations[j];
+      for ( let i = 0; i < result.flavors.length; ++i ) {
+        const flavor = result.flavors[i];
+        for ( let j = 0; j < flavor.expectations.length; ++j ) {
+          const expect = flavor.expectations[j];
           ++expectCount;
           if ( !expect.result || expect.result === 'Not Tested' ) {
             ++failedCount;
@@ -1805,13 +1795,14 @@ class Taste extends EventEmitter {
             ++passedCount;
           }
         }
-        for ( let j = 0; j < result.errors.length; ++j ) {
-          errors.push(result.errors[j]);
+        for ( let j = 0; j < flavor.errors.length; ++j ) {
+          errors.push(flavor.errors[j]);
         }
       }
       // Format the results
       const formattedResults = {
-        'Flavors': results.length,
+        'Elapsed Time': `${result.elapsedTime}ms`,
+        'Flavors': result.flavors.length,
         'Expectations': expectCount,
         'Passed': passedCount,
         'Failed': failedCount,
@@ -1833,12 +1824,12 @@ class Taste extends EventEmitter {
         nav.className = 'taste-navigation';
         let passedLinks = []; // array of hyperlinks to each passed test
         let failedLinks = []; // array of hyperlinks to each failed test
-        for ( let i = 0; i < results.length; ++i ) {
-          const result = results[i];
-          for ( let j = 0; j < result.expectations.length; ++j ) {
-            const expect = result.expectations[j];
+        for ( let i = 0; i < result.flavors.length; ++i ) {
+          const flavor = result.flavors[i];
+          for ( let j = 0; j < flavor.expectations.length; ++j ) {
+            const expect = flavor.expectations[j];
             let a = (expect.result === true) ? passedLinks : failedLinks;
-            a.push(`<li class="taste-summary-navigation-item"><a class="taste-summary-navigation-link" href="#${result.id}">${a.length + 1}. ${result.title}</a></li>`);
+            a.push(`<li class="taste-summary-navigation-item"><a class="taste-summary-navigation-link" href="#${flavor.id}">${a.length + 1}. ${flavor.title}</a></li>`);
           }
         }
 
@@ -1857,8 +1848,8 @@ class Taste extends EventEmitter {
         node.className = 'taste-summary';
         node.innerHTML = `
           <h2 class="taste-summary-title">Summary:</h2>
-          <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${results.elapsedTime}ms</span></p>
-          <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${results.length}</span></p>
+          <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${result.elapsedTime}ms</span></p>
+          <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${result.flavors.length}</span></p>
           <p class="taste-summary-content">Number of Expectations: <span class="taste-summary-count" data-taste="expectCount">${expectCount}</span></p>
           <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${passedCount}/${expectCount}</span></p>
           <ul class="taste-summary-passed-list">
@@ -1941,17 +1932,25 @@ class Taste extends EventEmitter {
     return flavor;
   }
 
+  finished(handler) {
+    TasteError.TypeError.check(handler, 'function');
+
+    this.once('complete', handler);
+  }
+
   /**
    * Returns a Result object containing details about each Flavor
    * @returns {Object}
    */
   getCurrentResults() {
-    const results = [];
+    const result = {
+      flavors: [],
+      elapsedTime: Date.now() - this.start
+    };
     this.forAllFlavors((flavor) => {
-      results.push(flavor.getCurrentResults());
-    });
-    results.elapsedTime = Date.now() - this.start;
-    return results;
+      result.flavors.push(flavor.getCurrentResults());
+    }); 
+    return result;
   }
   
   forAllFlavors(fn) {
@@ -2130,6 +2129,13 @@ class Test extends EventEmitter {
       }
     })
     .then(() => this.emit('complete'));
+  }
+
+  toObject() {
+    return {
+      'description': this.description,
+      'handler': this.handler.toString()
+    };
   }
 
   get isReady() {

@@ -33,13 +33,6 @@ class Taste extends EventEmitter {
       writable: false,
       configurable: false,
     });
-    Object.defineProperty(this, 'testMode', {
-      value: !(process && process.version && process.versions && process.versions.node),
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
-
 
     // Register events 
     this.registerEvent('ready', {persist: true}); // Emits when Taste is done initializing; or when the dom emit 'load' for browsers
@@ -52,7 +45,7 @@ class Taste extends EventEmitter {
     });
     
     // Print the flavor test results
-    this.once('complete', (results) => {
+    this.once('complete', (result) => {
       // Don't print if in in test mode
       if ( options.test ) {
         return;
@@ -62,10 +55,10 @@ class Taste extends EventEmitter {
       let failedCount = 0;
       let fails = [];
       let errors = this.errors;
-      for ( let i = 0; i < results.length; ++i ) {
-        const result = results[i];
-        for ( let j = 0; j < result.expectations.length; ++j ) {
-          const expect = result.expectations[j];
+      for ( let i = 0; i < result.flavors.length; ++i ) {
+        const flavor = result.flavors[i];
+        for ( let j = 0; j < flavor.expectations.length; ++j ) {
+          const expect = flavor.expectations[j];
           ++expectCount;
           if ( !expect.result || expect.result === 'Not Tested' ) {
             ++failedCount;
@@ -75,13 +68,14 @@ class Taste extends EventEmitter {
             ++passedCount;
           }
         }
-        for ( let j = 0; j < result.errors.length; ++j ) {
-          errors.push(result.errors[j]);
+        for ( let j = 0; j < flavor.errors.length; ++j ) {
+          errors.push(flavor.errors[j]);
         }
       }
       // Format the results
       const formattedResults = {
-        'Flavors': results.length,
+        'elapsedTime': result.elapsedTime,
+        'Flavors': result.flavors.length,
         'Expectations': expectCount,
         'Passed': passedCount,
         'Failed': failedCount,
@@ -103,12 +97,12 @@ class Taste extends EventEmitter {
         nav.className = 'taste-navigation';
         let passedLinks = []; // array of hyperlinks to each passed test
         let failedLinks = []; // array of hyperlinks to each failed test
-        for ( let i = 0; i < results.length; ++i ) {
-          const result = results[i];
-          for ( let j = 0; j < result.expectations.length; ++j ) {
-            const expect = result.expectations[j];
+        for ( let i = 0; i < result.flavors.length; ++i ) {
+          const flavor = result.flavors[i];
+          for ( let j = 0; j < flavor.expectations.length; ++j ) {
+            const expect = flavor.expectations[j];
             let a = (expect.result === true) ? passedLinks : failedLinks;
-            a.push(`<li class="taste-summary-navigation-item"><a class="taste-summary-navigation-link" href="#${result.id}">${a.length + 1}. ${result.title}</a></li>`);
+            a.push(`<li class="taste-summary-navigation-item"><a class="taste-summary-navigation-link" href="#${flavor.id}">${a.length + 1}. ${flavor.title}</a></li>`);
           }
         }
 
@@ -127,8 +121,8 @@ class Taste extends EventEmitter {
         node.className = 'taste-summary';
         node.innerHTML = `
           <h2 class="taste-summary-title">Summary:</h2>
-          <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${results.elapsedTime}ms</span></p>
-          <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${results.length}</span></p>
+          <p class="taste-summary-content">Elapsed Time: <span class="taste-summary-time" data-taste="elapsedTime">${result.elapsedTime}ms</span></p>
+          <p class="taste-summary-content">Number of flavors: <span class="taste-summary-count" data-taste="flavorCount">${result.flavors.length}</span></p>
           <p class="taste-summary-content">Number of Expectations: <span class="taste-summary-count" data-taste="expectCount">${expectCount}</span></p>
           <p class="taste-summary-content">Passed: <span class="taste-summary-passed"  data-taste="passed">${passedCount}/${expectCount}</span></p>
           <ul class="taste-summary-passed-list">
@@ -211,17 +205,25 @@ class Taste extends EventEmitter {
     return flavor;
   }
 
+  finished(handler) {
+    TasteError.TypeError.check(handler, 'function');
+
+    this.once('complete', handler);
+  }
+
   /**
    * Returns a Result object containing details about each Flavor
    * @returns {Object}
    */
   getCurrentResults() {
-    const results = [];
+    const result = {
+      flavors: [],
+      elapsedTime: Date.now() - this.start
+    };
     this.forAllFlavors((flavor) => {
-      results.push(flavor.getCurrentResults());
-    });
-    results.elapsedTime = Date.now() - this.start;
-    return results;
+      result.flavors.push(flavor.getCurrentResults());
+    }); 
+    return result;
   }
   
   forAllFlavors(fn) {

@@ -82,4 +82,23 @@ Taste('Taste handles asynchronous and synchronous tests')
 })
 .expect('complete').toBeTruthy();
 
+Taste('Retrieve comprehensive taste test results')
+.test(profile => {
+  const t = new taste({test: true});
+  t.flavor('sync')
+  .test(p => p.foo = 'foo')
+  .expect('foo').toEqual('foo');
+
+  t.flavor('async')
+  .test(p => setTimeout(() => {
+    p.async = true;
+  }, 250))
+  .expect('async').toBeTruthy();
+
+  t.finished(result => {
+    profile.result = result;
+  })
+})
+.expect('result').toBeTruthy();
+
 module.exports = Taste;

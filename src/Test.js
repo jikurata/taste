@@ -58,6 +58,13 @@ class Test extends EventEmitter {
     .then(() => this.emit('complete'));
   }
 
+  toObject() {
+    return {
+      'description': this.description,
+      'handler': this.handler.toString()
+    };
+  }
+
   get isReady() {
     return this.getEvent('ready').hasEmittedAtLeastOnce
   }

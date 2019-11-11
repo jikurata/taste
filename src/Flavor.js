@@ -552,10 +552,15 @@ class Flavor extends EventEmitter {
       'status': this.model.status,
       'duration': this.model.duration,
       'timeout': this.model.timeout,
-      'tests': this.tests,
+      'tests': [],
       'expectations': [],
       'errors': this.model.errors
     }
+
+    for ( let i = 0; i < this.tests.length; ++i ) {
+      o.tests.push(this.tests[i].toObject());
+    }
+    
     this.forEachExpectation((expect) => {
       o.expectations.push(expect.getCurrentResults());
     });
