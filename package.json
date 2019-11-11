@@ -7,6 +7,8 @@
   "scripts": {
     "build:example": "node build/build-example.js",
     "test:example": "node _test/example/src/browser.test.js",
+    "test:flavor": "node _test/flavor.test.js",
+    "test:expect": "node _test/expectation.test.js",
     "watch": "node build/exec-nodemon.js"
   },
   "keywords": [
@@ -22,6 +24,6 @@
     "nodemon": "^1.19.4"
   },
   "dependencies": {
-    "@jikurata/events": "^3.0.1"
+    "@jikurata/events": "^3.0.2"
   }
 }

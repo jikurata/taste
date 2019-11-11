@@ -6,8 +6,6 @@ class Model extends EventEmitter {
     super();
     this._map = {};
     this._setAll(o, false);
-
-    this.registerEvent('change');
   }
 
   /**

@@ -113,12 +113,16 @@ class Taste extends EventEmitter {
         'Errors': errorCount
       };
 
-      console.log('Failed Flavors:\n', fails);
-      console.log('Errors:\n', errors);
+      if ( fails.length ) {
+        console.log('Failed Flavors:\n', fails);
+      }
+      if ( errors.length ) {
+        console.log('Errors:\n', errors);
+      }
       console.log('Summary:\n', formattedResults);
       this.emit('complete', results);
     });
-    
+
     this.flavors.push(flavor);
     return flavor;
   }

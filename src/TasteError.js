@@ -6,14 +6,14 @@
  */
 class FlavorTimedOut extends Error {
   constructor(flavor) {
-    super(`Flavor Timed Out: Flavor "${flavor.title}" timed out after ${flavor.duration} ms.`);
+    super(`Flavor Timed Out: Flavor "${flavor.model.title}" timed out after ${flavor.model.duration} ms.`);
   }
 
   /**
    * @param {Flavor} flavor 
    */
   static check(flavor) {
-    if ( flavor.duration >= flavor.timeLimit ) {
+    if ( flavor.model.duration >= flavor.model.timeout ) {
       throw new FlavorTimedOut(flavor);
     }
   }
@@ -68,7 +68,7 @@ class ImmutableProfileValue extends Error {
 
 class EnvironmentNotBrowser extends Error {
   constructor(flavor) {
-    super(`Environment Not Browser: Flavor "${flavor.title}" cannot be executed outside of a browser environment.`);
+    super(`Environment Not Browser: Flavor "${flavor.model.title}" cannot be executed outside of a browser environment.`);
   }
 }
 

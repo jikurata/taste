@@ -5,7 +5,6 @@ const Model = require('./Model.js');
 const Profile = require('./Profile.js');
 const Test = require('./Test.js');
 const Expectation = require('./Expectation.js');
-const Sample = require('./Sample.js');
 
 class Flavor extends EventEmitter {
   constructor(taste, id, title) {
@@ -34,12 +33,6 @@ class Flavor extends EventEmitter {
       writable: false,
       configurable: false
     });
-    Object.defineProperty(this, 'document', {
-      value: new Sample(this),
-      enumerable: true,
-      writable: false,
-      configurable: false,
-    });
     Object.defineProperty(this, 'profile', {
       value: new Profile(),
       enumerable: true,
@@ -51,10 +44,11 @@ class Flavor extends EventEmitter {
         'rootElement': null,
         'title': title,
         'status': 'Initializing',
-        'timeout': 2500,
         'start': 0,
         'duration': 0,
+        'timeout': 2500,
         'timeoutRef': null,
+        'sample': null,
         'errors': [],
         'completedTests': 0,
         'completedExpectations': 0
@@ -73,47 +67,68 @@ class Flavor extends EventEmitter {
     this.registerEvent('test'); // Emits when a new test is added
     this.registerEvent('expect'); // Emits when a new expectation is added
     this.registerEvent('error');
-    this.registerEvent('timeout', {persist: true});
+
+    // Flavor is ready to start Taste is ready and once a test has been registered
+    this.once('test', () => {
+      try { 
+        if ( !taste.isReady ) {
+          this.taste.once('ready', () => {
+            this.emit('ready');
+          });
+        }
+        else {
+          this.emit('ready');
+        }
+      }
+      catch(err) {
+        this.emit('error', err);
+      }
+    });
 
     // Execute flavor lifecycle
     this.once('ready', () => {
-      this.model.status = 'Preparing';
-      this.update();
-      this.emit('before', this.profile)
-      .then(errors => {
-        if ( !errors && !this.isComplete ) {
-          this.model.status = 'In Progress';
-          this.update();
-          return this.emit('start');
-        }
-      })
-      .then(errors => {
-        if ( !errors && !this.isComplete ) {
-          this.model.status = 'Resolving';
-          this.update();
-          return this.emit('after', this.profile);
-        }
-      })
-      .then(errors => {
-        if ( !errors && !this.isComplete ) {
-          this.model.status = 'Complete';
-          this.update();
-          return this.emit('complete');
-        }
-      });
+      try {
+        this.model.status = 'Preparing';
+        this.update();
+        this.emit('before', this.profile)
+        .then(errors => {
+          if ( !errors && !this.isComplete ) {
+            this.model.status = 'In Progress';
+            this.update();
+            return this.emit('start');
+          }
+        })
+        .then(errors => {
+          if ( !errors && !this.isComplete ) {
+            this.model.status = 'Resolving';
+            this.update();
+            return this.emit('after', this.profile);
+          }
+        })
+        .then(errors => {
+          if ( !errors && !this.isComplete ) {
+            this.model.status = 'Complete';
+            this.update();
+            return this.emit('complete', this.getCurrentResults());
+          }
+        });
+      }
+      catch(err) {
+        this.emit('error', err);
+      }
     });
 
-    // Monitor flavor test duration
-    this.once('before', () => new Promise((resolve, reject) => {
+    this.once('before', () => {
+      // Monitor flavor duration
       try {
-        this.model._set('start', Date.now(), false);
-        this.model._set('timeoutRef', setInterval(() => {
+        this.model.start = Date.now();
+        this.model.timeoutRef = setInterval(() => {
           // Update the current elapsed time
           const delta = Date.now() - this.model.start;
           this.model._set('duration', delta, false);
     
-          if ( this.model.root ) {
-            this.getElement('duration').textContent = this.duration;
+          if ( this.isBrowser ) {
+            this.getElement('duration').textContent = this.model.duration;
           }
           
           // Handle timeout
@@ -123,91 +138,108 @@ class Flavor extends EventEmitter {
           catch(err) {
             this.emit('error', err);
           }
-        }, 1), false);
-        return resolve();
+        }, 1);
       }
       catch(err) {
-        return reject(err); // Throw any unexpected errors
+        this.emit('error', err);
       }
-    }));
+    });
 
     // Handle test execution conditions
     this.on('test', (test) => {
-      // Run the test if the start state has been emitted
-      if ( this.hasStarted ) {
-        test.run(this.profile)
-        .then(() => {
-          ++this.model.completedTests;
-        })
-        .catch(err => {
-          this.emit('error', err);
-          ++this.model.completedTests;
-        });
-      }
-      // Otherwise, wait until it starts
-      else {
-        this.once('start', () => {
-          test.run(this.profile)
-          .then(() => {
-            ++this.model.completedTests;
-          })
-          .catch(err => {
-            this.emit('error', err);
-            ++this.model.completedTests;
+      try {
+        const runTest = () => {
+          setTimeout(() => {
+            test.run(this.profile)
+            .then(() => {
+              ++this.model.completedTests;
+            })
+            .catch(err => {
+              this.emit('error', err);
+              ++this.model.completedTests;
+            });
+          }, 0);
+        };
+        // Run the test if the start state has been emitted
+        if ( this.hasStarted ) {
+          runTest();
+        }
+        // Otherwise, wait until it starts
+        else {
+          this.once('start', () => {
+            runTest();
           });
-        });
+        }
+      }
+      catch(err) {
+        this.emit('error', err);
       }
     });
 
     this.once('start', () => new Promise((resolve, reject) => {
-      if ( this.model.completedTests === this.test.length ) {
-        return resolve();
+      try {
+        if ( this.model.completedTests === this.tests.length ) {
+          return resolve();
+        }
+        else {
+          this.model.on('completedTests', (v) => {
+            if ( v === this.tests.length ) {
+              return resolve();
+            }
+          });
+        }
       }
-      else {
-        this.model.on('completedTests', (v) => {
-          if ( v === this.tests.length ) {
-            return resolve();
-          }
-        });
+      catch(err) {
+        this.emit('error', err);
       }
     }));
 
     // Wait for expectations to resolve after tests resolve
     this.once('after', () => new Promise((resolve, reject) => {
-      if ( this.model.completedExpectations === this.expectations.length ) {
-        return resolve();
-      }
-      
-      // If the expectations are not completed, listen to the expectation counter
-      this.model.on('completedExpectations', (v) => {
-        if ( v === this.expectations.length ) {
+      try {
+        if ( this.expectations.length && this.model.completedExpectations === this.expectations.length ) {
           return resolve();
         }
-      });
+        
+        // If the expectations are not completed, listen to the expectation counter
+        this.model.on('completedExpectations', (v) => {
+          if ( v === this.expectations.length ) {
+            return resolve();
+          }
+        });
+      }
+      catch(err) {
+        this.emit('error', err);
+      }
     }));
     
     // Stop the timer once the flavor test is complete
     this.once('complete', () => {
-      // End the timeout
-      if ( this.model.timeoutRef ) {
-        clearInterval(this.model.timeoutRef);
-        this.model._set('timeoutRef', null, false);
+      try {
+        // End the timeout
+        if ( this.model.timeoutRef ) {
+          clearInterval(this.model.timeoutRef);
+          this.model._set('timeoutRef', null, false);
+        }
+        this.update();
       }
-      this.update();
+      catch(err) {
+        this.emit('error', err);
+      }
     });
 
     // Handle thrown errors
     this.on('error', (err) => {
-      this.model.errors.push(err);
       if ( err instanceof TasteError.EnvironmentNotBrowser ) {
         this.model.status = 'Error: Requires a browser to test';
-        this.emit('complete');
       }
       else if ( err instanceof TasteError.FlavorTimedOut ) {
         this.model.status = 'Error: Timed out';
         // Inspect object states to determine the reason why the timeout occurred
-        this.emit('timeout');
-        this.emit('complete');
+      }
+      this.model.errors.push(err);
+      if ( !this.isComplete ) {
+        this.emit('complete', this.getCurrentResults());
       }
     });
 
@@ -247,7 +279,6 @@ class Flavor extends EventEmitter {
         }
       });
     }
-    this.emit('ready');
   }
 
   update() {
@@ -303,7 +334,8 @@ class Flavor extends EventEmitter {
       if ( !this.taste.isReady ) {
         this.taste.once('ready', () => this.sample(html));
       }
-      this.document.innerHTML(html);
+      // Do stuff to initialize the sample
+
       this.update();
     }
     else {
@@ -346,31 +378,36 @@ class Flavor extends EventEmitter {
    * @returns {Flavor}
    */
   expect(arg) {
-    const expect = new Expectation(this, arg);
-    // When all expectations are complete, then the flavor's state is complete
-    expect.once('complete', () => {
-      // Retrieve expectation results
+    try {
+      const expect = new Expectation(this, arg);
+      // When all expectations are complete, then the flavor's state is complete
+      expect.once('complete', () => {
+        // Retrieve expectation results
+        this.update();
+        ++this.model.completedExpectations;
+      });
+  
+      // Register the argument as a property in profile
+      if ( !this.profile._has(arg) ) {
+        // If the property already exists, but not in the map, register it in the map and emit the value
+        if ( this.profile.hasOwnProperty(arg) ) {
+          this.profile._set(arg, this.profile[arg], true);
+        }
+        else {
+          // Otherwise register the event normally
+          this.profile._set(arg, undefined, false);
+        }
+      }
+  
+      this.expectations.push(expect);
+      // Emit that an expectation has been added
+      this.emit('expect', expect);
       this.update();
-      ++this.model.completedExpectations;
-    });
-
-    // Register the argument as a property in profile
-    if ( !this.profile._has(arg) ) {
-      // If the property already exists, but not in the map, register it in the map and emit the value
-      if ( this.profile.hasOwnProperty(arg) ) {
-        this.profile._set(arg, this.profile[arg], true);
-      }
-      else {
-        // Otherwise register the event normally
-        this.profile._set(arg, undefined, false);
-      }
+      return expect;
     }
-
-    this.expectations.push(expect);
-    // Emit that an expectation has been added
-    this.emit('expect', expect);
-    this.update();
-    return expect;
+    catch(err) {
+      this.emit('error', err);
+    }
   }
 
   /**
@@ -380,9 +417,14 @@ class Flavor extends EventEmitter {
    * @returns {Flavor}
    */
   timeout(t) {
-    this.model.timeout = t;
-    this.update();
-    return this;
+    try {
+      this.model.timeout = t;
+      this.update();
+      return this;
+    }
+    catch(err) {
+      this.emit('error', err);
+    }
   }
 
   /**
@@ -392,17 +434,78 @@ class Flavor extends EventEmitter {
    * @returns {Flavor}
    */
   before(handler) {
-    TasteError.TypeError.check(handler, 'function');
+    try {
+      TasteError.TypeError.check(handler, 'function');
 
-    this.on('before', (profile) => handler(profile));
-    return this;
+      this.on('before', (profile) => new Promise((resolve, reject) => {
+        const returnValue = handler(profile);
+        if ( returnValue instanceof Promise ) {
+          returnValue.then(() => resolve())
+          .catch(err => this.emit('error', err));
+        }
+        else {
+          resolve();
+        }
+      }));
+      return this;
+    }
+    catch(err) {
+      this.emit('error', err);
+    }
   }
 
+  /**
+   * Executes the provided function after all tests finish
+   * The Flavor Profile is passed as an argument into the handler
+   * @param {Function} handler 
+   * @returns {Flavor}
+   */
   after(handler) {
-    TasteError.TypeError.check(handler, 'function');
+    try {
+      TasteError.TypeError.check(handler, 'function');
 
-    this.on('after', (profile) => handler(profile));
-    return this;
+      this.on('after', (profile) => new Promise((resolve, reject) => {
+        const returnValue = handler(profile);
+        if ( returnValue instanceof Promise ) {
+          returnValue.then(() => resolve())
+          .catch(err => this.emit('error', err));
+        }
+        else {
+          resolve();
+        }
+      }));
+      return this;
+    }
+    catch(err) {
+      this.emit('error');
+    }
+  }
+
+  /**
+   * Executes the provided function after the flavor is complete
+   * A Result object is passed as an argument to the function
+   * @param {Function} handler 
+   * @returns {Flavor}
+   */
+  finished(handler) {
+    try {
+      TasteError.TypeError.check(handler, 'function');
+
+      this.on('complete', (profile) => new Promise((resolve, reject) => {
+        const returnValue = handler(profile);
+        if ( returnValue instanceof Promise ) {
+          returnValue.then(() => resolve())
+          .catch(err => this.emit('error', err));
+        }
+        else {
+          resolve();
+        }
+      }));
+      return this;
+    }
+    catch(err) {
+      this.emit('error', err);
+    }
   }
 
   forEachExpectation(fn) {
@@ -415,7 +518,7 @@ class Flavor extends EventEmitter {
   }
 
   getElement(s) {
-    if ( this.root ) return this.rootElement.querySelector(`[data-flavor="${s}"]`);
+    if ( this.taste.rootElement ) return this.model.rootElement.querySelector(`[data-flavor="${s}"]`);
     return null;
   }
 
@@ -425,6 +528,7 @@ class Flavor extends EventEmitter {
       'status': this.model.status,
       'duration': this.model.duration,
       'timeout': this.model.timeout,
+      'tests': this.tests,
       'expectations': [],
       'errors': this.model.errors
     }
@@ -432,22 +536,6 @@ class Flavor extends EventEmitter {
       o.expectations.push(expect.getCurrentResults());
     });
     return o;
-  }
-
-  get rootElement() {
-    return this.model.rootElement;
-  }
-
-  get title() {
-    return this.model.title;
-  }
-
-  get timeLimit() {
-    return this.model.timeout;
-  }
-
-  get duration() {
-    return this.model.duration;
   }
 
   get isReady() {
