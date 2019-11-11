@@ -1,6 +1,6 @@
 {
   "name": "@jikurata/taste",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Lightweight testing framework",
   "main": "index.js",
   "repository": "https://github.com/jikurata/taste",

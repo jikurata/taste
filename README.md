@@ -1,4 +1,4 @@
-# Taste v1.0.0
+# Taste v1.0.1
 Lightweight testing framework
 ---
 ## Install
@@ -120,6 +120,13 @@ require('test2.js');
 #### Returns {Flavor} #### 
 #### Description ####
 - Exported by the @jikurata/taste module. Creates a new Flavor instance with the descriptor as the title. Returns the Flavor object.
+
+### **Function taste.finished(*handler*)** ###
+#### Arguments ####
+- handler {Function}: A function to be executed when Taste emits "complete".
+#### Returns {Void} #### 
+#### Description ####
+- The function receives a single argument, an Object containing the comprehensive results of the taste tests.
 
 ### **Function taste.prepare(*querySelector*)** ###
 #### Arguments ####
