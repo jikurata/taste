@@ -285,6 +285,7 @@ require('test2.js');
     - Implemented Flavor.before() and Flavor.after() to perform pre-test/post-test operations
     - A single Flavor instance now supports multiple tests
 - Expectation changes
+    - Resolves when an error occurs
     - Expectation.isTypeOf() has been changed to Expectation.toBeTypeOf()
     - Expectation.isInstanceOf() has been changed to Expectation.toBeInstanceOf()
     - added Expectation.toBeArray() and Expectation.toHaveProperty()
