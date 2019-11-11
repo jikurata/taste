@@ -89,30 +89,30 @@ class Flavor extends EventEmitter {
     this.once('ready', () => {
       try {
         this.model.status = 'Preparing';
-        this.update();
+        this.emit('update');
         this.emit('before', this.profile)
         .then(errors => {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'In Progress';
-            this.update();
+            this.emit('update');
             return this.emit('start');
           }
         })
         .then(errors => {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'Resolving';
-            this.update();
+            this.emit('update');
             return this.emit('after', this.profile);
           }
         })
         .then(errors => {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'Complete';
-            this.update();
+            this.emit('update');
             return this.emit('complete', this.getCurrentResults());
           }
         })
-        .then(() => this.update());
+        .then(() => this.emit('update'));
       }
       catch(err) {
         this.emit('error', err);
@@ -222,7 +222,7 @@ class Flavor extends EventEmitter {
           clearInterval(this.model.timeoutRef);
           this.model._set('timeoutRef', null, false);
         }
-        this.update();
+        this.emit('update');
       }
       catch(err) {
         this.emit('error', err);
@@ -244,6 +244,58 @@ class Flavor extends EventEmitter {
       this.model.errors.push(err);
       if ( !this.isComplete ) {
         this.emit('complete', this.getCurrentResults());
+      }
+    });
+
+    // Update the view if in browser
+    this.on('update', () => {
+      if ( !this.isReady ) {
+        return;
+      }
+  
+      if ( this.isBrowser  && this.model.rootElement ) {
+        // Update the sample
+        const sampleAsHTML = this.getElement('sampleAsHTML');
+        const sampleAsText = this.getElement('sampleAsText');
+        const sampleRoot = sampleAsHTML.children[0];
+    
+        // Only overwrite innerHTML of sampleAsHTML when there is no sample root
+        if ( !sampleRoot ) sampleAsHTML.innerHTML = this.model.sample;
+        else sampleAsText.textContent = sampleAsHTML.innerHTML;
+  
+        // Update the view
+        this.getElement('title').textContent = this.model.title;
+        this.getElement('status').textContent = this.model.status;
+        this.getElement('timeout').textContent = this.model.timeout;
+  
+        let testHtml = '';
+        // Print test sources
+        for ( let i = 0; i < this.tests.length; ++i ) {
+          const test = this.tests[i];
+          testHtml +=`
+            <li class="taste-flavor-test">
+              <p class="taste-flavor-test-description">Description: ${test.description}</p>
+              <p class="taste-flavor-test-source">${test.handler.toString()}</p>
+            </li>
+          `;
+        }
+        this.getElement('test').innerHTML = testHtml;
+  
+        // Print expectations
+        let expectHtml = '';
+        this.forEachExpectation((expect) => {
+          expectHtml += `
+          <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.model.statement}</span></p>
+          <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${expect.model.evaluator} = ${expect.model.value}</span></p>
+          `;
+          if ( expect.isComplete ) {
+            const result = expect.model.result;
+            let s = (result === true) ? 'Passed' : (typeof result === 'string') ? result : 'Failed';
+            expectHtml += `<h4 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result">${s}</span></h4>`
+          }
+  
+        });
+        this.getElement('expectation').innerHTML = expectHtml;
       }
     });
 
@@ -286,60 +338,6 @@ class Flavor extends EventEmitter {
       });
     }
   }
-
-  /**
-   * If in browser, updates the current view
-   */
-  update() {
-    if ( !this.isReady ) {
-      return;
-    }
-
-    if ( this.isBrowser  && this.model.rootElement ) {
-      // Update the sample
-      const sampleAsHTML = this.getElement('sampleAsHTML');
-      const sampleAsText = this.getElement('sampleAsText');
-      const sampleRoot = sampleAsHTML.children[0];
-  
-      // Only overwrite innerHTML of sampleAsHTML when there is no sample root
-      if ( !sampleRoot ) sampleAsHTML.innerHTML = this.model.sample;
-      else sampleAsText.textContent = sampleAsHTML.innerHTML;
-
-      // Update the view
-      this.getElement('title').textContent = this.model.title;
-      this.getElement('status').textContent = this.model.status;
-      this.getElement('timeout').textContent = this.model.timeout;
-
-      let testHtml = '';
-      // Print test sources
-      for ( let i = 0; i < this.tests.length; ++i ) {
-        const test = this.tests[i];
-        testHtml +=`
-          <li class="taste-flavor-test">
-            <p class="taste-flavor-test-description">Description: ${test.description}</p>
-            <p class="taste-flavor-test-source">${test.handler.toString()}</p>
-          </li>
-        `;
-      }
-      this.getElement('test').innerHTML = testHtml;
-
-      // Print expectations
-      let expectHtml = '';
-      this.forEachExpectation((expect) => {
-        expectHtml += `
-        <p class="taste-flavor-content">Expects: <span class="taste-flavor-expect">${expect.model.statement}</span></p>
-        <p class="taste-flavor-content">Received: <span class="taste-flavor-received">${expect.model.evaluator} = ${expect.model.value}</span></p>
-        `;
-        if ( expect.isComplete ) {
-          const result = expect.model.result;
-          let s = (result === true) ? 'Passed' : (typeof result === 'string') ? result : 'Failed';
-          expectHtml += `<h4 class="taste-flavor-content">Result: <span class="taste-flavor-result" data-flavor="result">${s}</span></h4>`
-        }
-
-      });
-      this.getElement('expectation').innerHTML = expectHtml;
-    }
-  }
   
   /**
    * Creates a subtree in the dom to perform a test on
@@ -362,7 +360,7 @@ class Flavor extends EventEmitter {
       };
 
       this.model.sample = sampleRoot;
-      this.update();
+      this.emit('update');
     }
     else {
       // Skip the flavor test if not in a browser
@@ -389,7 +387,7 @@ class Flavor extends EventEmitter {
       this.tests.push(test);
       // Emit that a test has been added
       this.emit('test', test);
-      this.update();
+      this.emit('update');
       return this;
     }
     catch(err) {
@@ -409,7 +407,7 @@ class Flavor extends EventEmitter {
       // When all expectations are complete, then the flavor's state is complete
       expect.once('complete', () => {
         // Retrieve expectation results
-        this.update();
+        this.emit('update');
         ++this.model.completedExpectations;
       });
   
@@ -428,7 +426,7 @@ class Flavor extends EventEmitter {
       this.expectations.push(expect);
       // Emit that an expectation has been added
       this.emit('expect', expect);
-      this.update();
+      this.emit('update');
       return expect;
     }
     catch(err) {
@@ -445,7 +443,7 @@ class Flavor extends EventEmitter {
   timeout(t) {
     try {
       this.model.timeout = t;
-      this.update();
+      this.emit('update');
       return this;
     }
     catch(err) {

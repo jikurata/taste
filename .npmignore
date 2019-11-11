@@ -1,5 +1,4 @@
-test/
+_test/
 build/
-src/
 .gitignore
 nodemon.json

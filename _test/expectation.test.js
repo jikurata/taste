@@ -31,11 +31,11 @@ Taste('Expectation Model Properties')
   profile.value = profile.expect.model.value;
   profile.result = profile.expect.model.result;
 })
-.expect('model').hasOwnProperty('statement')
-.expect('model').hasOwnProperty('evaluator')
-.expect('model').hasOwnProperty('comparator')
-.expect('model').hasOwnProperty('value')
-.expect('model').hasOwnProperty('result');
+.expect('model').toHaveProperty('statement')
+.expect('model').toHaveProperty('evaluator')
+.expect('model').toHaveProperty('comparator')
+.expect('model').toHaveProperty('value')
+.expect('model').toHaveProperty('result');
 
 Taste('Expectation Events')
 .before(profile => {
@@ -86,11 +86,11 @@ Taste('Expectation enters complete state if it emits an error')
   profile.expect.emit('ready'); // Will emit error because comparator and test value have not been defined
 })
 .expect('complete').toBeTruthy()
-.expect('result').hasOwnProperty('test')
-.expect('result').hasOwnProperty('evaluator')
-.expect('result').hasOwnProperty('statement')
-.expect('result').hasOwnProperty('received')
-.expect('result').hasOwnProperty('result');
+.expect('result').toHaveProperty('test')
+.expect('result').toHaveProperty('evaluator')
+.expect('result').toHaveProperty('statement')
+.expect('result').toHaveProperty('received')
+.expect('result').toHaveProperty('result');
 
 Taste('Comparator: toBeTruthy')
 .before(profile => {
@@ -208,7 +208,7 @@ Taste('Comparator: toBeArray')
 })
 .expect('result1').toBeTruthy();
 
-Taste('Comparator: hasOwnProperty')
+Taste('Comparator: toHaveProperty')
 .before(profile => {
   profile.flavor = new Flavor(new taste(), '1', '');
 })
@@ -221,7 +221,7 @@ Taste('Comparator: hasOwnProperty')
     'foo': 0,
     1: 'bar'
   };
-  expect1.hasOwnProperty('foo');
+  expect1.toHaveProperty('foo');
 
   const expect2 = new Expectation(profile.flavor, 'value');
   expect2.on('complete', () => {
@@ -231,7 +231,7 @@ Taste('Comparator: hasOwnProperty')
     'foo': 0,
     1: 'bar'
   };
-  expect2.hasOwnProperty(1);
+  expect2.toHaveProperty(1);
 })
 .expect('result1').toBeTruthy()
 .expect('result2').toBeTruthy();

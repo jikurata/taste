@@ -174,7 +174,7 @@ class Expectation extends EventEmitter {
    * Check if the test value has the provided property or array of properties
    * @param {String|Array<String>} value 
    */
-  hasOwnProperty(value) {
+  toHaveProperty(value) {
     this.toBeComparative(v => {
       if ( !value ) {
         return false;
