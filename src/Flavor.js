@@ -41,6 +41,7 @@ class Flavor extends EventEmitter {
     });
     Object.defineProperty(this, 'model', {
       value: new Model({
+        'await': false,
         'rootElement': null,
         'title': title,
         'status': 'Initializing',
@@ -59,35 +60,22 @@ class Flavor extends EventEmitter {
     });
 
     // Register events
-    this.registerEvent('ready', {persist: true}); // Emits
+    this.registerEvent('ready', {persist: true});
+    this.registerEvent('start', {persist: true}); 
     this.registerEvent('before');
-    this.registerEvent('start'); 
+    this.registerEvent('test', {persist: true});
     this.registerEvent('after');
     this.registerEvent('complete', {persist: true});
-    this.registerEvent('test'); // Emits when a new test is added
-    this.registerEvent('expect'); // Emits when a new expectation is added
+    this.registerEvent('add-test'); // Emits when a new test is added
+    this.registerEvent('add-expect'); // Emits when a new expectation is added
     this.registerEvent('error');
 
-    // Flavor is ready to start Taste is ready and once a test has been registered
-    this.once('test', () => {
-      try { 
-        if ( !taste.isReady ) {
-          this.taste.once('ready', () => {
-            this.emit('ready');
-          });
-        }
-        else {
-          this.emit('ready');
-        }
-      }
-      catch(err) {
-        this.emit('error', err);
-      }
-    });
-
     // Execute flavor lifecycle
-    this.once('ready', () => {
+    this.once('start', () => {
       try {
+        if ( this.isComplete ) {
+          return;
+        }
         this.model.status = 'Preparing';
         this.emit('update');
         this.emit('before', this.profile)
@@ -95,7 +83,7 @@ class Flavor extends EventEmitter {
           if ( !errors && !this.isComplete ) {
             this.model.status = 'In Progress';
             this.emit('update');
-            return this.emit('start');
+            return this.emit('test');
           }
         })
         .then(errors => {
@@ -147,9 +135,11 @@ class Flavor extends EventEmitter {
     });
 
     // Handle test execution conditions
-    this.on('test', (test) => {
+    this.on('add-test', (test) => {
       try {
-        const runTest = () => {
+        // Execute once the start phase has begun
+        this.once('test', () => {
+          // Call tests asynchronously
           setTimeout(() => {
             test.run(this.profile, this.model.sample)
             .then(() => {
@@ -160,26 +150,16 @@ class Flavor extends EventEmitter {
               ++this.model.completedTests;
             });
           }, 0);
-        };
-        // Run the test if the start state has been emitted
-        if ( this.hasStarted ) {
-          runTest();
-        }
-        // Otherwise, wait until it starts
-        else {
-          this.once('start', () => {
-            runTest();
-          });
-        }
+        });
       }
       catch(err) {
         this.emit('error', err);
       }
     });
 
-    this.once('start', () => new Promise((resolve, reject) => {
+    this.once('test', () => new Promise((resolve, reject) => {
       try {
-        if ( this.model.completedTests === this.tests.length ) {
+      if ( this.model.completedTests === this.tests.length ) {
           return resolve();
         }
         else {
@@ -302,40 +282,42 @@ class Flavor extends EventEmitter {
     // Wait for window to finish loading before appending anything to the DOM
     if ( this.isBrowser ) {
       this.taste.once('ready', () => {
-        if ( this.isBrowser ) {
-          // Create the view for the flavor
-          const flavorRoot = document.createElement('article');
-          flavorRoot.setAttribute('data-flavor', this.id);
-          const html = `
-          <a name="${this.id}">
-            <header>
-              <h2 class="taste-flavor-title" data-flavor="title"></h2>
-            </header>
-            <section data-flavor="content">
-              <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
-              <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration"></span>ms</p>
-              <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout"></span>ms</p>
-              <section>
-                <p>DOM:</p>
-                <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
-                <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
-              </section>
-              <div class="taste-flavor-content">
-                <h4>Test:</h4>
-                <ul data-flavor="test"></ul>
-              </div>
-              <div class="taste-flavor-content">
-                <h4>Expectation:</h4>
-                <section class="taste-flavor-expectation" data-flavor="expectation"></section>
-              </div>
+        // Create the view for the flavor
+        const flavorRoot = document.createElement('article');
+        flavorRoot.setAttribute('data-flavor', this.id);
+        const html = `
+        <a name="${this.id}">
+          <header>
+            <h2 class="taste-flavor-title" data-flavor="title"></h2>
+          </header>
+          <section data-flavor="content">
+            <h3 class="taste-flavor-content">Status: <span class="taste-flavor-status" data-flavor="status">Preparing...</span></h4>
+            <p class="taste-flavor-content">Duration: <span class="taste-flavor-duration" data-flavor="duration"></span>ms</p>
+            <p class="taste-flavor-content">Timeout: <span class="taste-flavor-timeout" data-flavor="timeout"></span>ms</p>
+            <section>
+              <p>DOM:</p>
+              <section class="taste-flavor-sample" data-flavor="sampleAsHTML"></section>
+              <section class="taste-flavor-sample" data-flavor="sampleAsText"></section>
             </section>
-          </a>`;
+            <div class="taste-flavor-content">
+              <h4>Test:</h4>
+              <ul data-flavor="test"></ul>
+            </div>
+            <div class="taste-flavor-content">
+              <h4>Expectation:</h4>
+              <section class="taste-flavor-expectation" data-flavor="expectation"></section>
+            </div>
+          </section>
+        </a>`;
 
-          flavorRoot.innerHTML = html;
-          this.model.rootElement = flavorRoot;
-          this.taste.rootElement.appendChild(flavorRoot);
-        }
+        flavorRoot.innerHTML = html;
+        this.model.rootElement = flavorRoot;
+        this.taste.rootElement.appendChild(flavorRoot);
+        this.emit('ready');
       });
+    }
+    else {
+      this.emit('ready');
     }
   }
   
@@ -382,12 +364,20 @@ class Flavor extends EventEmitter {
         handler = arguments[0];
         description = '';
       }
-
       const test = new Test(description, handler);
       this.tests.push(test);
-      // Emit that a test has been added
-      this.emit('test', test);
-      this.emit('update');
+      // Create the test asynchronously so the entire flavor function chain can execute first
+      setTimeout(() => {
+        try {
+          
+          // Emit that a test has been added
+          this.emit('add-test', test);
+          this.emit('update');
+        }
+        catch(err) {
+          this.emit('error', err);
+        }
+      }, 0);
       return this;
     }
     catch(err) {
@@ -411,22 +401,23 @@ class Flavor extends EventEmitter {
         ++this.model.completedExpectations;
       });
   
-      // Register the argument as a property in profile
-      if ( !this.profile._has(arg) ) {
-        // If the property already exists, but not in the map, register it in the map and emit the value
-        if ( this.profile.hasOwnProperty(arg) ) {
-          this.profile._set(arg, this.profile[arg], true);
-        }
-        else {
-          // Otherwise register the event normally
-          this.profile._set(arg, undefined, false);
-        }
-      }
-  
       this.expectations.push(expect);
       // Emit that an expectation has been added
-      this.emit('expect', expect);
-      this.emit('update');
+      setTimeout(() => {
+        // Register the argument as a property in profile
+        if ( !this.profile._has(arg) ) {
+          // If the property already exists, but not in the profile map, register it in the map and emit the value
+          if ( this.profile.hasOwnProperty(arg) ) {
+            this.profile._set(arg, this.profile[arg]);
+          }
+          else {
+            // Otherwise register the event normally
+            this.profile._set(arg, undefined, false);
+          }
+        }
+        this.emit('add-expect', expect);
+        this.emit('update');
+      }, 0);
       return expect;
     }
     catch(err) {
@@ -461,7 +452,7 @@ class Flavor extends EventEmitter {
     try {
       TasteError.TypeError.check(handler, 'function');
 
-      this.on('before', (profile) => new Promise((resolve, reject) => {
+      this.once('before', (profile) => new Promise((resolve, reject) => {
         const returnValue = handler(profile);
         if ( returnValue instanceof Promise ) {
           returnValue.then(() => resolve())
@@ -488,7 +479,7 @@ class Flavor extends EventEmitter {
     try {
       TasteError.TypeError.check(handler, 'function');
 
-      this.on('after', (profile) => new Promise((resolve, reject) => {
+      this.once('after', (profile) => new Promise((resolve, reject) => {
         const returnValue = handler(profile);
         if ( returnValue instanceof Promise ) {
           returnValue.then(() => resolve())
@@ -515,7 +506,7 @@ class Flavor extends EventEmitter {
     try {
       TasteError.TypeError.check(handler, 'function');
 
-      this.on('complete', (profile) => new Promise((resolve, reject) => {
+      this.once('complete', (profile) => new Promise((resolve, reject) => {
         const returnValue = handler(profile);
         if ( returnValue instanceof Promise ) {
           returnValue.then(() => resolve())
@@ -530,6 +521,15 @@ class Flavor extends EventEmitter {
     catch(err) {
       this.emit('error', err);
     }
+  }
+
+  /**
+   * Toggles await mode for the Flavor
+   * When called, any subsequent flavors will wait for this flavor to complete
+   * before starting
+   */
+  await() {
+    this.model.await = true;
   }
 
   forEachExpectation(fn) {
@@ -571,12 +571,16 @@ class Flavor extends EventEmitter {
     return this.getEvent('ready').hasEmittedAtLeastOnce;
   }
 
-  get hasStarted() {
-    return this.getEvent('start').hasEmittedAtLeastOnce;
+  get isTesting() {
+    return this.getEvent('test').hasEmittedAtLeastOnce;
   }
 
   get isComplete() {
     return this.getEvent('complete').hasEmittedAtLeastOnce;
+  }
+
+  get isAwaiting() {
+    return this.model.await;
   }
 
   get isBrowser() {

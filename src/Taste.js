@@ -15,6 +15,12 @@ class Taste extends EventEmitter {
     if ( !options.test ) {
       instance = this;
     }
+    Object.defineProperty(this, 'queue', {
+      value: [],
+      enumerable: true,
+      writable: false,
+      configurable: false
+    });
     Object.defineProperty(this, 'flavors', {
       value: [],
       enumerable: true,
@@ -33,6 +39,9 @@ class Taste extends EventEmitter {
       writable: false,
       configurable: false,
     });
+    this.start = null;
+    this.elapsedTime = null;
+    this.awaitingFlavor = null;
 
     // Register events 
     this.registerEvent('ready', {persist: true}); // Emits when Taste is done initializing; or when the dom emit 'load' for browsers
@@ -182,6 +191,25 @@ class Taste extends EventEmitter {
   }
 
   /**
+   * Inspects the flavor states and determines when to instruct the next Flavor
+   * to begin testing
+   */
+  next() {
+    if ( !this.queue.length || this.awaitingFlavor ) {
+      return;
+    }
+    const flavor = this.queue.shift();
+    this.awaitingFlavor = flavor;
+    flavor.once('complete', () => {
+      this.awaitingFlavor = null;
+      // Proceed to the next flavor in queue once this awaited flavor completes
+      this.next();
+    });
+    // Begin this flavor's test phase
+    flavor.emit('start');
+  }
+
+  /**
    * Creates a new Flavor to be tasted
    * @param {String} title
    * @returns {Flavor}
@@ -190,18 +218,37 @@ class Taste extends EventEmitter {
     const id = `flavor${this.flavors.length}`;
     const flavor = new Flavor(this, id, title);
 
+    this.flavors.push(flavor);
+
+    // Check if the queue can proceed when a flavor is ready
+    flavor.once('ready', () => {
+      // Call asynchronously, to ensure it is executed after the Flavor call chain has ended
+      setTimeout(() => {
+        if ( flavor.isAwaiting ) {
+          this.queue.push(flavor);
+          this.next();
+        }
+        else {
+          // Run the test normally if the flavor is not awaiting
+          flavor.emit('start');
+        }
+      }, 0);
+    });
+    
     flavor.once('complete', () => {
       if ( !this.isComplete ) {
         // Check if any other flavors are still incomplete
         if ( !this.allFlavorsAreComplete() ) {
           return;
         }
+
+        // Calculate the elapsed time to completion
+        this.elapsedTime = Date.now() - this.start;
+
         // Taste is done once all registered flavors are finished
         this.emit('complete', this.getCurrentResults());
       }
     });
-
-    this.flavors.push(flavor);
     return flavor;
   }
 
@@ -218,11 +265,12 @@ class Taste extends EventEmitter {
   getCurrentResults() {
     const result = {
       flavors: [],
-      elapsedTime: Date.now() - this.start
+      elapsedTime: (this.elapsedTime) ? this.elapsedTime : Date.now() - this.start
     };
-    this.forAllFlavors((flavor) => {
+    for ( let i = 0; i < this.flavors.length; ++i ) {
+      const flavor = this.flavors[i];
       result.flavors.push(flavor.getCurrentResults());
-    }); 
+    }
     return result;
   }
   

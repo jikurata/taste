@@ -8,7 +8,7 @@ const TasteError = require('../src/TasteError.js');
 
 Taste('Flavor Properties')
 .test(profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   profile.taste = flavor.taste;
   profile.id = flavor.id;
   profile.tests = flavor.tests;
@@ -25,7 +25,7 @@ Taste('Flavor Properties')
 
 Taste('Flavor Model properties')
 .test(profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   profile.rootElement = flavor.model.hasOwnProperty('rootElement');
   profile.title = flavor.model.hasOwnProperty('title');
   profile.status = flavor.model.hasOwnProperty('status');
@@ -52,15 +52,16 @@ Taste('Flavor Model properties')
 
 Taste('Flavor events')
 .test(profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   profile.ready = flavor.getEvent('ready');
-  profile.before = flavor.getEvent('before');
   profile.start = flavor.getEvent('start');
+  profile.before = flavor.getEvent('before');
+  profile.test = flavor.getEvent('test');
   profile.after = flavor.getEvent('after');
   profile.complete = flavor.getEvent('complete');
   profile.error = flavor.getEvent('error');
-  profile.test = flavor.getEvent('test');
-  profile.expect = flavor.getEvent('expect');
+  profile.addTest = flavor.getEvent('add-test');
+  profile.addExpect = flavor.getEvent('add-expect');
 })
 .expect('ready').toBeTruthy()
 .expect('before').toBeTruthy()
@@ -69,12 +70,12 @@ Taste('Flavor events')
 .expect('after').toBeTruthy()
 .expect('complete').toBeTruthy()
 .expect('error').toBeTruthy()
-.expect('test').toBeTruthy()
-.expect('expect').toBeTruthy();
+.expect('addTest').toBeTruthy()
+.expect('addExpect').toBeTruthy();
 
 Taste('Define operations before starting tests')
 .test('Register a function as a listener to the "before" event', profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   flavor.before(() => {})
   profile.beforeListenerCount = flavor.getEvent('before').listeners.length;
 })
@@ -82,7 +83,7 @@ Taste('Define operations before starting tests')
 
 Taste('Define operations after tests finish')
 .test('Register a function as a listener to the "after" event', profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   flavor.after(() => {})
   profile.afterListenerCount = flavor.getEvent('after').listeners.length;
 })
@@ -90,22 +91,24 @@ Taste('Define operations after tests finish')
 
 Taste('Adding tests to a Flavor')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), 'foo', 'bar');
+  profile.flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
 })
 .test('tests are pushed to the tests array', profile => {
   profile.flavor.test(p => {});
   profile.testLength = profile.flavor.tests.length;
 })
 .test('Adding test emits "test"', profile => {
-  profile.flavor.on('test', () => {
+  profile.flavor.once('add-test', () => {
     profile.emittedTest = true;
   });
   profile.flavor.test(p => {});
 })
 .test('Errors are caught and passed to the error event', profile => {
   profile.flavor.on('error', err => {
-    profile.threwError = err;
-  })
+    if ( !profile.threwError ) {
+      profile.threwError = err;
+    }
+  });
   profile.flavor.test(); // Will throw a TypeError for handler argument
 })
 .expect('testLength').toEqual(1)
@@ -114,22 +117,24 @@ Taste('Adding tests to a Flavor')
 
 Taste('Adding expectations to a Flavor')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), 'foo', 'bar');
+  profile.flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
 })
 .test(profile => {
   profile.flavor.expect('foo');
   profile.expectationLength = profile.flavor.expectations.length;
 })
 .test('Emits "expect" when an expectation is added', profile => {
-  profile.flavor.on('expect', () => {
+  profile.flavor.once('add-expect', () => {
     profile.expectEmitted = true;
   })
   profile.flavor.expect('bar');
 })
 .test('Errors are caught and passed to error event', profile => {
   profile.flavor.on('error', err => {
-    profile.errorCaught = err;
-  })
+    if ( !profile.errorCaught ) {
+      profile.errorCaught = err;
+    }
+  });
   profile.flavor.expect({throw:'error'});
 })
 .expect('expectationLength').toEqual(1)
@@ -139,11 +144,16 @@ Taste('Adding expectations to a Flavor')
 const flavor = Taste('Flavor Event State');
 flavor
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), 'eventTest', 'bar');
+  profile.flavor = new Flavor(new taste({test: true}), 'eventTest', 'bar');
 })
 .test('Emits "ready" once Taste is ready and a test has been registered', profile => {
   profile.flavor.once('ready', () => {
     profile.readyEmitted = true;
+  });
+})
+.test('Emits "start" when the flavor is instructed to begin', profile => {
+  profile.flavor.once('start', () => {
+    profile.startEmitted = true;
   });
 })
 .test('Emits "before" once the Flavor is ready', profile => {
@@ -151,9 +161,9 @@ flavor
     profile.beforeEmitted = true;
   });
 })
-.test('Emits "start" once the listeners to "before" are finished', profile => {
-  profile.flavor.once('start', () => {
-    profile.startEmitted = true;
+.test('Emits "test" once the listeners to "before" are finished', profile => {
+  profile.flavor.once('test', () => {
+    profile.testEmitted = true;
   });
 })
 .test('Emits "after" once all registered tests are complete', profile => {
@@ -168,16 +178,18 @@ flavor
   
   profile.flavor.test(p => p.test = true);
   profile.flavor.expect('test').toBeTruthy();
+  profile.flavor.emit('start');
 })
 .expect('readyEmitted').toBeTruthy()
-.expect('beforeEmitted').toBeTruthy()
 .expect('startEmitted').toBeTruthy()
+.expect('beforeEmitted').toBeTruthy()
+.expect('testEmitted').toBeTruthy()
 .expect('afterEmitted').toBeTruthy()
 .expect('completeEmitted').toBeTruthy();
 
 Taste('Configuring Flavor Timeout')
 .test(profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   flavor.timeout(4200);
   profile.timeoutValue = flavor.model.timeout;
 })
@@ -185,7 +197,7 @@ Taste('Configuring Flavor Timeout')
 
 Taste('Get the results of the test once the flavor is complete')
 .test(profile => {
-  const flavor = new Flavor(new taste(), 'foo', 'bar');
+  const flavor = new Flavor(new taste({test: true}), 'foo', 'bar');
   flavor.test(p => p.test = true);
   flavor.expect('test').toBeTruthy();
   flavor.finished(result => {
@@ -197,6 +209,7 @@ Taste('Get the results of the test once the flavor is complete')
     profile.expectations = result.expectations;
     profile.errors = result.errors;
   });
+  flavor.emit('start');
 })
 .expect('title').toBeTypeOf('string')
 .expect('status').toBeTypeOf('string')

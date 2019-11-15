@@ -35,9 +35,11 @@ Taste('Taste Events')
 Taste('flavor registers a flavor')
 .test(profile => {
   const t = new taste({test: true});
-  t.flavor('test');
+  t.flavor('test')
+  .emit('complete');
 
   profile.flavors = t.flavors.length;
+  
 })
 .expect('flavors').toEqual(1);
 
@@ -81,6 +83,44 @@ Taste('Taste handles asynchronous and synchronous tests')
   });
 })
 .expect('complete').toBeTruthy();
+
+Taste('Awaited flavors occur procedurally')
+.test(profile => {
+  const t = new taste({test: true});
+  const order = [];
+  t.flavor('await1')
+  .test(p => {
+    setTimeout(() => {
+      p.foo = 'foo';
+    }, 250)
+    order.push(1);
+  })
+  .expect('foo').toBeTruthy()
+  .await();
+
+  t.flavor('await2')
+  .test(p => {
+    p.foo = 'foo';
+    order.push(2);
+  })
+  .expect('foo').toBeTruthy()
+  .await();
+
+  t.flavor('await3')
+  .test(p => {
+    setTimeout(() => {
+      p.foo = 'foo';
+    }, 100);
+    order.push(3);
+  })
+  .expect('foo').toBeTruthy()
+  .await();
+
+  t.finished(() => {
+    profile.order = order;
+  });
+})
+.expect('order').toMatchArray([1,2,3]);
 
 Taste('Retrieve comprehensive taste test results')
 .test(profile => {

@@ -79,16 +79,14 @@ class Expectation extends EventEmitter {
     this.once('evaluate', () => new Promise((resolve, reject) => {
       try {
         if ( !this.isComplete ) {
-          setTimeout(() => {
-            try {
-              this.model.result = this.model.comparator(this.model.value);
-              resolve();
-            }
-            catch(err) {
-              this.emit('error', err);
-              resolve();
-            }
-          }, 0)
+          try {
+            this.model.result = this.model.comparator(this.model.value);
+            resolve();
+          }
+          catch(err) {
+            this.emit('error', err);
+            resolve();
+          }
         }
         else {
           resolve();
@@ -165,6 +163,32 @@ class Expectation extends EventEmitter {
    */
   toBeArray() {
     return this.toBeComparative(v => Array.isArray(v), `${this.model.evaluator} is an Array`);
+  }
+
+  /**
+   * Check if the test value matches the contents of another array
+   * If ordered is true, enforce sequential equality as well
+   * @param {Array} array
+   * @param {Boolean} ordered
+   * @returns {Flavor}
+   */
+  toMatchArray(array, ordered = true) {
+    return this.toBeComparative(v => {
+      if ( array.length !== v.length ) {
+        return false;
+      }
+
+      for ( let i = 0; i < array.length; ++i ) {
+        const item = array[i];
+        if ( v.indexOf(item) === -1 ) {
+          return false;
+        }
+        if ( ordered && v[i] !== item ) {
+          return false;
+        }
+      }
+      return true;
+    }, `${this.model.evaluator} matches array [${array}]`)
   }
 
   /**

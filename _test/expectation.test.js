@@ -8,19 +8,22 @@ const TasteError = require('../src/TasteError.js');
 
 Taste('Expectation Properties')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', 'test');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '1');
   profile.expect = new Expectation(profile.flavor, 'foo');
 })
 .test(profile => {
   profile.propFlavor = profile.expect.flavor;
   profile.propModel = profile.expect.model;
 })
+.after(profile => {
+  profile.flavor.emit('complete');
+})
 .expect('propFlavor').toBeInstanceOf(Flavor)
 .expect('propModel').toBeInstanceOf(Model);
 
 Taste('Expectation Model Properties')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', 'test');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '2');
   profile.expect = new Expectation(profile.flavor, 'foo');
 })
 .test(profile => {
@@ -31,6 +34,9 @@ Taste('Expectation Model Properties')
   profile.value = profile.expect.model.value;
   profile.result = profile.expect.model.result;
 })
+.after(profile => {
+  profile.flavor.emit('complete');
+})
 .expect('model').toHaveProperty('statement')
 .expect('model').toHaveProperty('evaluator')
 .expect('model').toHaveProperty('comparator')
@@ -39,7 +45,7 @@ Taste('Expectation Model Properties')
 
 Taste('Expectation Events')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', 'test');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '3');
   profile.expect = new Expectation(profile.flavor, 'foo');
 })
 .test(profile => {
@@ -48,6 +54,9 @@ Taste('Expectation Events')
   profile.complete = profile.expect.getEvent('complete');
   profile.error = profile.expect.getEvent('error');
 })
+.after(profile => {
+  profile.flavor.emit('complete');
+})
 .expect('ready').toBeTruthy()
 .expect('evaluate').toBeTruthy()
 .expect('complete').toBeTruthy()
@@ -55,7 +64,7 @@ Taste('Expectation Events')
 
 Taste('Expectation Event State')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
   profile.expect = new Expectation(profile.flavor, 'test');
 })
 .test('An expectation is ready once it receives a comparator and test value', profile => {
@@ -69,13 +78,16 @@ Taste('Expectation Event State')
   profile.expect.model.value = 'foo';
   profile.expect.toMatch('foo');
 })
+.after(profile => {
+  profile.flavor.emit('complete');
+})
 .expect('ready').toBeTruthy()
 .expect('evaluate').toBeTruthy()
 .expect('complete').toBeTruthy();
 
 Taste('Expectation enters complete state if it emits an error')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
   profile.expect = new Expectation(profile.flavor, 'test');
 })
 .test(profile => {
@@ -94,7 +106,7 @@ Taste('Expectation enters complete state if it emits an error')
 
 Taste('Comparator: toBeTruthy')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -124,7 +136,7 @@ Taste('Comparator: toBeTruthy')
 
 Taste('Comparator: toBeFalsy')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -154,7 +166,7 @@ Taste('Comparator: toBeFalsy')
 
 Taste('Comparator: toBe')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -175,7 +187,7 @@ Taste('Comparator: toBe')
 
 Taste('Comparator: toEqual')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -196,7 +208,7 @@ Taste('Comparator: toEqual')
 
 Taste('Comparator: toBeArray')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -208,9 +220,39 @@ Taste('Comparator: toBeArray')
 })
 .expect('result1').toBeTruthy();
 
+Taste('Comparator: toMatchArray')
+.before(profile => {
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
+})
+.test(profile => {
+  const expect1 = new Expectation(profile.flavor, 'value');
+  expect1.on('complete', () => {
+    profile.result1 = expect1.model.result === true;
+  });
+  expect1.model.value = [1,2,3];
+  expect1.toMatchArray([1,2,3]);
+
+  const expect2 = new Expectation(profile.flavor, 'value');
+  expect2.on('complete', () => {
+    profile.result2 = expect2.model.result === true;
+  });
+  expect2.model.value = [1,2,3];
+  expect2.toMatchArray([3,2,1], false);
+
+  const expect3 = new Expectation(profile.flavor, 'value');
+  expect3.on('complete', () => {
+    profile.result3 = expect3.model.result === false;
+  });
+  expect3.model.value = [1,2,3];
+  expect3.toMatchArray([1,2,3,4]);
+})
+.expect('result1').toBeTruthy()
+.expect('result2').toBeTruthy()
+.expect('result3').toBeTruthy();
+
 Taste('Comparator: toHaveProperty')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -238,7 +280,7 @@ Taste('Comparator: toHaveProperty')
 
 Taste('Comparator: toBeGreaterThan')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -268,7 +310,7 @@ Taste('Comparator: toBeGreaterThan')
 
 Taste('Comparator: toBeLessThan')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -298,7 +340,7 @@ Taste('Comparator: toBeLessThan')
 
 Taste('Comparator: toBeInRange')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -344,7 +386,7 @@ Taste('Comparator: toBeInRange')
 
 Taste('Comparator: toMatch')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -374,7 +416,7 @@ Taste('Comparator: toMatch')
 
 Taste('Comparator: toBeTypeOf')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
@@ -404,7 +446,7 @@ Taste('Comparator: toBeTypeOf')
 
 Taste('Comparator: toBeInstanceOf')
 .before(profile => {
-  profile.flavor = new Flavor(new taste(), '1', '');
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
 })
 .test(profile => {
   const expect1 = new Expectation(profile.flavor, 'value');
