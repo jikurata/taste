@@ -63,6 +63,46 @@ Taste('Hook me up')
         // Some stats about the flavor test
     })
 ```
+Flavors with external variable dependencies can be controlled with await()
+```
+const server = http.createServer();
+const port = 3000;
+
+Flavor('server test 1')
+    .before(profile => {
+        profile.server = server;
+        server.listen(port);
+    })
+    .test(...)
+    .expect...
+    .after(profile => {
+        return new Promise((resolve, reject) => {
+            server.close(() => {
+                resolve();
+            });
+        })
+    })
+    .await() // Instructs Taste to wait for this flavor to finish before executing any other flavors that called await()
+
+// Will not start until the previous flavor completes
+Flavor('server test 2')
+    .before(profile => {
+        profile.server = server;
+        server.listen(port);
+    })
+    .test(...)
+    .expect...
+    .after(profile => {
+        return new Promise((resolve, reject) => {
+            server.close(() => {
+                resolve();
+            });
+        })
+    })
+    .await()
+
+Flavor('sync test')... // await does not interupt unawaited Flavors
+```
 Adjust the timeout duration for a test
 ```
 Taste('Need more time')
@@ -247,6 +287,27 @@ require('test2.js');
 #### Description ####
 - Performs a loose check for a truthy value. Returns its Flavor.
 
+#### Expectation.toBeTypeOf(*type*) ####
+#### Arguments ####
+- type {String}
+#### Returns {Flavor} #### 
+#### Description ####
+- Performs a typeof check on the Profile value. Returns its Flavor.
+
+#### Expectation.toBeInstanceOf(*prototype*) ####
+#### Arguments ####
+- prototype {Object}
+#### Returns {Flavor} #### 
+#### Description ####
+- Performs a instanceof check on the Profile value. Returns its Flavor.
+
+#### Expectation.toContain(*value*) ####
+#### Arguments ####
+- value {String|Array<Any>}
+#### Returns {Flavor} #### 
+#### Description ####
+- Checks if the test value contains the value as a substring/subarray.
+
 #### Expectation.toEqual(*value*) ####
 #### Arguments ####
 - value {Any}
@@ -268,25 +329,20 @@ require('test2.js');
 #### Description ####
 - Checks if regex or string matches any part of the Profile value. Uses RegExp.test(). Returns its Flavor.
 
-#### Expectation.toBeTypeOf(*type*) ####
+#### Expectation.toMatchArray(*array*, *ordered = true*) ####
 #### Arguments ####
-- type {String}
+- array {Array<Any>}
+- ordered {Boolean}
 #### Returns {Flavor} #### 
 #### Description ####
-- Performs a typeof check on the Profile value. Returns its Flavor.
-
-#### Expectation.toBeInstanceOf(*prototype*) ####
-#### Arguments ####
-- prototype {Object}
-#### Returns {Flavor} #### 
-#### Description ####
-- Performs a instanceof check on the Profile value. Returns its Flavor.
+- Checks if the test value is an array that matches the provided array. The ordered boolean determines whether the comparison should acknowledge sequential equality when comparing the two arrays
 
 ## Version Log
 ---
 ### v1.1.0
 - Implemented Flavor.await() to instruct Taste to wait for that Flavor to finish before starting other awaited Flavors.
 - Implemented Expectation.toMatchArray() to handle array comparisons
+- Implemented Expectation.toContain() to handle substring/subarray comparisons
 
 ### v1.0.1
 - Implemented Taste.finished() to expose the object containing the comprehensive results of the taste tests.
