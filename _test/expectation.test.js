@@ -250,6 +250,60 @@ Taste('Comparator: toMatchArray')
 .expect('result2').toBeTruthy()
 .expect('result3').toBeTruthy();
 
+Taste('Comparator: toContain')
+.before(profile => {
+  profile.flavor = new Flavor(new taste({test: true}), '1', '');
+})
+.test(profile => {
+  const expect1 = new Expectation(profile.flavor, 'value');
+  expect1.on('complete', () => {
+    profile.result1 = expect1.model.result === true;
+  });
+  expect1.model.value = [1,2,3];
+  expect1.toContain([1,2,3]);
+
+  const expect2 = new Expectation(profile.flavor, 'value');
+  expect2.on('complete', () => {
+    profile.result2 = expect2.model.result === true;
+  });
+  expect2.model.value = [1,2,3];
+  expect2.toContain([2,3]);
+
+  const expect3 = new Expectation(profile.flavor, 'value');
+  expect3.on('complete', () => {
+    profile.result3 = expect3.model.result === false;
+  });
+  expect3.model.value = [1,2,3];
+  expect3.toContain([1,2,3,4]);
+
+  const expect4 = new Expectation(profile.flavor, 'value');
+  expect4.on('complete', () => {
+    profile.result4 = expect4.model.result === true;
+  });
+  expect4.model.value = 'foobar';
+  expect4.toContain('foobar');
+
+  const expect5 = new Expectation(profile.flavor, 'value');
+  expect5.on('complete', () => {
+    profile.result5 = expect5.model.result === true;
+  });
+  expect5.model.value = 'foobar';
+  expect5.toContain('bar');
+
+  const expect6 = new Expectation(profile.flavor, 'value');
+  expect6.on('complete', () => {
+    profile.result6 = expect6.model.result === false;
+  });
+  expect6.model.value = 'foobar';
+  expect6.toContain('foobar and more');
+})
+.expect('result1').toBeTruthy()
+.expect('result2').toBeTruthy()
+.expect('result3').toBeTruthy()
+.expect('result4').toBeTruthy()
+.expect('result5').toBeTruthy()
+.expect('result6').toBeTruthy();
+
 Taste('Comparator: toHaveProperty')
 .before(profile => {
   profile.flavor = new Flavor(new taste({test: true}), '1', '');

@@ -192,6 +192,41 @@ class Expectation extends EventEmitter {
   }
 
   /**
+   * Check if the test value contains the argument as a substring or subarray
+   * @param {String|Array} value
+   * @returns {Flavor}
+   */
+  toContain(value) {
+    return this.toBeComparative(v => {
+      if ( typeof value === 'string' ) {
+        return v.indexOf(value) > -1;
+      }
+      else {
+        for ( let i = 0; i < v.length; ++i ) {
+          // Immediately return false if the value array is longer than the remaining indexes
+          if ( value.length > v.length - i ) {
+            return false;
+          }
+          
+          if ( v[i] === value[0] ) {
+            let match = true;
+            for ( let j = 1; j <= value.length; ++j ) {
+              if ( v[i + j] !== value[j] ) {
+                match = false;
+                break;
+              }
+            }
+            if ( match ) {
+              return match;
+            }
+          }
+        }
+      }
+      return false;
+    }, `${this.model.evaluator} contains ${value}`);
+  }
+
+  /**
    * Check if the test value has the provided property or array of properties
    * @param {String|Array<String>} value 
    */

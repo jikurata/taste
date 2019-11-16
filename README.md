@@ -1,4 +1,4 @@
-# Taste v1.0.1
+# Taste v1.1.0
 Lightweight testing framework
 ---
 ## Install
@@ -284,6 +284,10 @@ require('test2.js');
 
 ## Version Log
 ---
+### v1.1.0
+- Implemented Flavor.await() to instruct Taste to wait for that Flavor to finish before starting other awaited Flavors.
+- Implemented Expectation.toMatchArray() to handle array comparisons
+
 ### v1.0.1
 - Implemented Taste.finished() to expose the object containing the comprehensive results of the taste tests.
  
